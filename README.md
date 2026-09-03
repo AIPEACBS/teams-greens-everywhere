@@ -49,9 +49,9 @@ It has no external `@require` dependency.
 2. Open the [published build source](https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js), copy all of it, and paste it into Greasy Fork's script-code field.
 3. Review the automatically read metadata and publish.
 
-GitHub Actions verifies that the committed distribution file matches the
-readable source on every push. Tampermonkey updates installed copies from the
-GitHub build URL in the userscript metadata.
+Tampermonkey updates installed copies from the GitHub build URL in the
+userscript metadata. Greasy Fork can be notified of updates with its GitHub
+webhook integration after the first publication.
 
 ## Windows suppresses web
 
