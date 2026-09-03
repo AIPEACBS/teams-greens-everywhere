@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "description": "The schedule structure used independently by the Windows tray runtime and Tampermonkey userscript.",
+  "settings": {
+    "enabled": "boolean",
+    "timezone": "A timezone identifier detected on first setup and editable later.",
+    "schedule": {
+      "mon|tue|wed|thu|fri|sat|sun": {
+        "enabled": "boolean",
+        "periods": [
+          {
+            "start": "24-hour HH:mm local time",
+            "end": "24-hour HH:mm local time. An earlier end is the following day.",
+            "startJitter": "non-negative minutes, default 10",
+            "endJitter": "non-negative minutes, default 10"
+          }
+        ]
+      }
+    }
+  },
+  "rules": [
+    "Each period receives one independently chosen start offset and one independently chosen end offset in its inclusive configured range.",
+    "Resolved offsets are persisted per schedule date and settings revision, so an app or browser restart does not change them.",
+    "The active state is true when any resolved period contains the current time.",
+    "Overnight periods are supported by treating an end at or before its start as occurring on the following calendar day."
+  ]
+}

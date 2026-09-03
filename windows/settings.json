@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "enabled": true,
+  "timezone": "auto",
+  "revision": 1,
+  "schedule": {
+    "mon": { "enabled": true, "periods": [{"start": "09:00", "end": "17:00", "startJitter": 10, "endJitter": 10}] },
+    "tue": { "enabled": true, "periods": [{"start": "09:00", "end": "17:00", "startJitter": 10, "endJitter": 10}] },
+    "wed": { "enabled": true, "periods": [{"start": "09:00", "end": "17:00", "startJitter": 10, "endJitter": 10}] },
+    "thu": { "enabled": true, "periods": [{"start": "09:00", "end": "17:00", "startJitter": 10, "endJitter": 10}] },
+    "fri": { "enabled": true, "periods": [{"start": "09:00", "end": "17:00", "startJitter": 10, "endJitter": 10}] },
+    "sat": { "enabled": false, "periods": [] },
+    "sun": { "enabled": false, "periods": [] }
+  },
+  "loopbackPort": 23920
+}

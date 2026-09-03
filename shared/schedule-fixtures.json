@@ -1,0 +1,23 @@
+[
+  {
+    "name": "weekday within one period",
+    "timezone": "UTC",
+    "now": "2026-09-07T10:00:00Z",
+    "period": { "start": "09:00", "end": "17:00", "startJitter": 0, "endJitter": 0 },
+    "active": true
+  },
+  {
+    "name": "weekday outside one period",
+    "timezone": "UTC",
+    "now": "2026-09-07T08:00:00Z",
+    "period": { "start": "09:00", "end": "17:00", "startJitter": 0, "endJitter": 0 },
+    "active": false
+  },
+  {
+    "name": "overnight period",
+    "timezone": "UTC",
+    "now": "2026-09-08T01:00:00Z",
+    "period": { "start": "22:00", "end": "02:00", "startJitter": 0, "endJitter": 0 },
+    "active": true
+  }
+]
