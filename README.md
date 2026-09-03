@@ -36,8 +36,10 @@ Windows sign-in. No administrator access is required.
 2. Open [the userscript](https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js) and confirm its single install prompt.
 3. Keep a signed-in Teams tab open. It may remain unfocused in the background.
 
-Tampermonkey’s menu provides Start / Stop, Status, and Settings. During active
-periods, the script attempts to restore an `Away` status to `Available`.
+Tampermonkey’s menu provides Start / Stop, Status, and Settings. Start / Stop
+and Status show an in-page confirmation with the current schedule state.
+During active periods, the script attempts to restore an `Away` status to
+`Available`.
 
 ## Publish on Greasy Fork
 

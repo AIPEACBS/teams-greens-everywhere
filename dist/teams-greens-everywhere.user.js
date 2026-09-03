@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.2
+// @version      2.1.3
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -173,6 +173,7 @@
   const settings = loadSettings();
   let cache = loadCache();
   let timer;
+  let toastTimeout;
 
   function loadSettings() {
     const value = GM_getValue('settings', null);
@@ -257,6 +258,27 @@
       tick().catch((error) => console.debug('[Teams Greens Everywhere]', error));
       timer = setInterval(() => tick().catch((error) => console.debug('[Teams Greens Everywhere]', error)), POLL_MS);
     }
+  }
+
+  function currentStatusMessage() {
+    const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
+    saveCache();
+    if (!settings.enabled) return 'Stopped. No Teams presence checks are running.';
+    return result.active
+      ? 'Enabled. Active now; Teams is checked every 30 seconds.'
+      : 'Enabled. Waiting for the next scheduled period.';
+  }
+
+  function showToast(message) {
+    document.querySelector('.tge-toast')?.remove();
+    clearTimeout(toastTimeout);
+    const toast = document.createElement('div');
+    toast.className = 'tge-toast';
+    toast.setAttribute('role', 'status');
+    toast.textContent = `Teams Greens Everywhere: ${message}`;
+    toast.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:360px;background:#1e1e1e;color:#fff;border:1px solid #666;border-radius:6px;padding:12px 16px;font:14px system-ui;box-shadow:0 4px 16px #0008;';
+    document.body.append(toast);
+    toastTimeout = setTimeout(() => toast.remove(), 5_000);
   }
 
   function showSettings() {
@@ -383,7 +405,14 @@
     });
   }
 
-  GM_registerMenuCommand('Start / Stop', () => { settings.enabled = !settings.enabled; persistSettings(); restart(); });
+  GM_registerMenuCommand('Start / Stop', () => {
+    settings.enabled = !settings.enabled;
+    persistSettings();
+    restart();
+    const message = currentStatusMessage();
+    console.info(`[Teams Greens Everywhere] ${message}`);
+    showToast(message);
+  });
   GM_registerMenuCommand('Settings', () => {
     console.info('[Teams Greens Everywhere] Settings menu command selected.');
     try {
@@ -393,9 +422,9 @@
     }
   });
   GM_registerMenuCommand('Status', () => {
-    const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
-    saveCache();
-    alert(`Teams Greens Everywhere is ${settings.enabled ? 'enabled' : 'stopped'} and ${result.active ? 'active now' : 'outside its schedule'}.`);
+    const message = currentStatusMessage();
+    console.info(`[Teams Greens Everywhere] ${message}`);
+    showToast(message);
   });
 
   restart();
