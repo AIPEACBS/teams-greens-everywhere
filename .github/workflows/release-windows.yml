@@ -1,0 +1,45 @@
+name: Release Windows scripts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'windows/**'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Package Windows scripts
+        id: package
+        shell: bash
+        run: |
+          archive_root="teams-greens-everywhere-windows-${GITHUB_SHA::12}"
+          mkdir "$archive_root"
+          cp -R windows "$archive_root/windows"
+          zip -r "${archive_root}.zip" "$archive_root"
+          sha256sum "${archive_root}.zip" > SHA256SUMS.txt
+          printf 'archive=%s.zip\n' "$archive_root" >> "$GITHUB_OUTPUT"
+          printf 'tag=windows-%s\n' "${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.package.outputs.tag }}"
+          archive="${{ steps.package.outputs.archive }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$archive" SHA256SUMS.txt --clobber
+          else
+            gh release create "$tag" "$archive" SHA256SUMS.txt \
+              --target "$GITHUB_SHA" \
+              --title "$tag" \
+              --generate-notes
+          fi
