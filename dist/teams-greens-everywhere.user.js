@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.1
+// @version      2.1.2
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -12,6 +12,8 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @connect      127.0.0.1
 // @downloadURL  https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js
 // @updateURL    https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js
 // ==/UserScript==
@@ -209,16 +211,23 @@
 
   async function windowsNativeIsActive() {
     if (!settings.suppressWhenWindowsActive) return false;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 750);
-    try {
-      const response = await fetch(`http://127.0.0.1:${LOOPBACK_PORT}/status`, { signal: controller.signal });
-      return response.ok && (await response.json()).active === true;
-    } catch {
-      return false;
-    } finally {
-      clearTimeout(timeout);
-    }
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: `http://127.0.0.1:${LOOPBACK_PORT}/status`,
+        timeout: 750,
+        onload: (response) => {
+          if (response.status < 200 || response.status >= 300) return resolve(false);
+          try {
+            resolve(JSON.parse(response.responseText).active === true);
+          } catch {
+            resolve(false);
+          }
+        },
+        onerror: () => resolve(false),
+        ontimeout: () => resolve(false),
+      });
+    });
   }
 
   async function restoreAvailable() {
@@ -251,42 +260,102 @@
   }
 
   function showSettings() {
+    console.info('[Teams Greens Everywhere] Building Settings panel.');
     const overlay = document.createElement('div');
+    overlay.className = 'tge-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0009;color:#f5f5f5;font:14px system-ui;overflow:auto;padding:24px;';
-    const rows = DAY_KEYS.map((key, index) => {
+    const makeInput = (type, value, ariaLabel) => {
+      const input = document.createElement('input');
+      input.type = type;
+      input.value = String(value);
+      input.setAttribute('aria-label', ariaLabel);
+      return input;
+    };
+    const makeButton = (label) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      return button;
+    };
+    const makeLabel = (label, input) => {
+      const wrapper = document.createElement('label');
+      wrapper.append(document.createTextNode(label), input);
+      return wrapper;
+    };
+    const makePeriod = (period, dayName) => {
+      const row = document.createElement('div');
+      row.className = 'tge-period';
+      const start = makeInput('text', period.start, `${dayName} start`);
+      const end = makeInput('text', period.end, `${dayName} end`);
+      const startJitter = makeInput('number', period.startJitter, `${dayName} start variation`);
+      const endJitter = makeInput('number', period.endJitter, `${dayName} end variation`);
+      for (const input of [startJitter, endJitter]) {
+        input.min = '0';
+        input.max = '120';
+      }
+      const remove = makeButton('Remove');
+      remove.dataset.remove = '';
+      row.append(start, document.createTextNode(' to '), end, makeLabel('Start variation ', startJitter), makeLabel('End variation ', endJitter), remove);
+      return row;
+    };
+
+    const style = document.createElement('style');
+    style.textContent = '.tge-overlay .tge-period{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.tge-overlay [data-day-row]{margin:16px 0;padding:12px;border:1px solid #444;border-radius:6px}.tge-overlay .tge-period input{max-width:120px}.tge-overlay button{cursor:pointer}';
+    const main = document.createElement('main');
+    main.style.cssText = 'max-width:820px;margin:auto;background:#1e1e1e;padding:24px;border-radius:8px';
+    const heading = document.createElement('h2');
+    heading.textContent = 'Teams Greens Everywhere';
+    const enabled = makeInput('checkbox', '', 'Enabled');
+    enabled.id = 'tge-enabled';
+    enabled.checked = settings.enabled;
+    const suppress = makeInput('checkbox', '', 'Pause while Windows native support is active');
+    suppress.id = 'tge-suppress';
+    suppress.checked = settings.suppressWhenWindowsActive;
+    const enabledLabel = makeLabel(' Enabled', enabled);
+    const suppressLabel = makeLabel(' Pause while Windows native support is active', suppress);
+    suppressLabel.style.marginLeft = '16px';
+    const timezone = makeInput('text', settings.timezone, 'Timezone');
+    timezone.id = 'tge-timezone';
+    const timezoneParagraph = document.createElement('p');
+    timezoneParagraph.append(document.createTextNode('Timezone saved at setup: '), timezone);
+    const explanation = document.createElement('p');
+    explanation.textContent = 'Each day starts and ends at a separately randomized time within its configured variation.';
+    main.append(heading, enabledLabel, suppressLabel, timezoneParagraph, explanation);
+
+    for (const [index, key] of DAY_KEYS.entries()) {
       const day = settings.schedule[key];
-      const periods = day.periods.map((period, periodIndex) => `
-        <div class="tge-period" data-day="${key}" data-index="${periodIndex}">
-          <input value="${period.start}" aria-label="${DAY_NAMES[index]} start">
-          <span>to</span><input value="${period.end}" aria-label="${DAY_NAMES[index]} end">
-          <label>Start variation <input type="number" min="0" max="120" value="${period.startJitter}"></label>
-          <label>End variation <input type="number" min="0" max="120" value="${period.endJitter}"></label>
-          <button type="button" data-remove>Remove</button>
-        </div>`).join('');
-      return `<section data-day-row="${key}"><label><input type="checkbox" ${day.enabled ? 'checked' : ''}> <strong>${DAY_NAMES[index]}</strong></label><div class="tge-periods">${periods}</div><button type="button" data-add="${key}">Add period</button></section>`;
-    }).join('');
-    overlay.innerHTML = `<style>
-      .tge-period { display:flex; gap:6px; align-items:center; margin:6px 0; flex-wrap:wrap; }
-      [data-day-row] { margin:16px 0; padding:12px; border:1px solid #444; border-radius:6px; }
-      .tge-period input { max-width:120px; }
-      button { cursor:pointer; }
-    </style><main style="max-width:820px;margin:auto;background:#1e1e1e;padding:24px;border-radius:8px">
-      <h2>Teams Greens Everywhere</h2>
-      <label><input id="tge-enabled" type="checkbox" ${settings.enabled ? 'checked' : ''}> Enabled</label>
-      <label style="margin-left:16px"><input id="tge-suppress" type="checkbox" ${settings.suppressWhenWindowsActive ? 'checked' : ''}> Pause while Windows native support is active</label>
-      <p>Timezone saved at setup: <input id="tge-timezone" value="${settings.timezone}" aria-label="Timezone"></p>
-      <p>Each day starts and ends at a separately randomized time within its configured variation.</p>
-      ${rows}
-      <p><button id="tge-save">Save</button> <button id="tge-close">Cancel</button></p>
-    </main>`;
+      const section = document.createElement('section');
+      section.dataset.dayRow = key;
+      const dayEnabled = makeInput('checkbox', '', `${DAY_NAMES[index]} enabled`);
+      dayEnabled.checked = day.enabled;
+      const dayLabel = document.createElement('label');
+      const dayTitle = document.createElement('strong');
+      dayTitle.textContent = DAY_NAMES[index];
+      dayLabel.append(dayEnabled, document.createTextNode(' '), dayTitle);
+      const periods = document.createElement('div');
+      periods.className = 'tge-periods';
+      for (const period of day.periods) periods.append(makePeriod(period, DAY_NAMES[index]));
+      const add = makeButton('Add period');
+      add.dataset.add = key;
+      section.append(dayLabel, periods, add);
+      main.append(section);
+    }
+
+    const actions = document.createElement('p');
+    const save = makeButton('Save');
+    save.id = 'tge-save';
+    const close = makeButton('Cancel');
+    close.id = 'tge-close';
+    actions.append(save, document.createTextNode(' '), close);
+    main.append(actions);
+    overlay.append(style, main);
     document.body.append(overlay);
+    console.info('[Teams Greens Everywhere] Settings panel mounted.');
 
     const addPeriod = (key) => {
       const container = overlay.querySelector(`[data-day-row="${key}"] .tge-periods`);
-      const row = document.createElement('div');
-      row.className = 'tge-period';
-      row.innerHTML = '<input value="09:00"><span>to</span><input value="17:00"><label>Start variation <input type="number" min="0" max="120" value="10"></label><label>End variation <input type="number" min="0" max="120" value="10"></label><button type="button" data-remove>Remove</button>';
-      container.append(row);
+      const dayIndex = DAY_KEYS.indexOf(key);
+      container.append(makePeriod({ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }, DAY_NAMES[dayIndex]));
     };
     overlay.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => addPeriod(button.dataset.add)));
     overlay.addEventListener('click', (event) => {
@@ -315,7 +384,14 @@
   }
 
   GM_registerMenuCommand('Start / Stop', () => { settings.enabled = !settings.enabled; persistSettings(); restart(); });
-  GM_registerMenuCommand('Settings', showSettings);
+  GM_registerMenuCommand('Settings', () => {
+    console.info('[Teams Greens Everywhere] Settings menu command selected.');
+    try {
+      showSettings();
+    } catch (error) {
+      console.error('[Teams Greens Everywhere] Settings panel failed to open.', error);
+    }
+  });
   GM_registerMenuCommand('Status', () => {
     const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
     saveCache();
