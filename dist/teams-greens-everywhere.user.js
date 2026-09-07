@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.9
+// @version      2.1.10
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -314,12 +314,16 @@
 
       const wasAway = presenceIsAway();
       if (wasAway === null) {
-        showActivityBanner('Available refresh failed.', 'red');
+        showActivityBanner('Waiting for Teams to finish loading.', 'gray');
         return;
       }
       activityTarget().click();
       await delay(PRESENCE_REFRESH_DELAY_MS);
       const isAwayAfterClick = presenceIsAway();
+      if (isAwayAfterClick === null) {
+        showActivityBanner('Waiting for Teams to finish loading.', 'gray');
+        return;
+      }
       if (isAwayAfterClick === false) {
         showActivityBanner('Available refreshed.', wasAway ? 'blue' : 'green');
         return;
@@ -330,6 +334,10 @@
       }
       await delay(PRESENCE_REFRESH_DELAY_MS);
       const isAwayAfterFallback = presenceIsAway();
+      if (isAwayAfterFallback === null) {
+        showActivityBanner('Waiting for Teams to finish loading.', 'gray');
+        return;
+      }
       showActivityBanner(isAwayAfterFallback === false ? 'Available refreshed with fallback.' : 'Available refresh failed.', isAwayAfterFallback === false ? 'yellow' : 'red');
     } catch (error) {
       console.error('[Teams Greens Everywhere] Presence refresh failed.', error);
