@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.8
+// @version      2.1.9
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
+// @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
 // @match        https://teams.microsoft.com/*
@@ -26,6 +27,7 @@
   const MENU_DELAY_MS = 250;
   const PRESENCE_REFRESH_DELAY_MS = 1_000;
   const LOOPBACK_PORT = 23920;
+  const LOCAL_STORAGE_PREFIX = 'teams-greens-everywhere.';
   const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -47,8 +49,39 @@
   let timer;
   let toastTimeout;
 
+  function loadLocalValue(key) {
+    try {
+      return localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${key}`);
+    } catch (error) {
+      console.error('[Teams Greens Everywhere] Unable to read the settings backup.', error);
+      return null;
+    }
+  }
+
+  function saveLocalValue(key, value) {
+    try {
+      localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${key}`, value);
+    } catch (error) {
+      console.error('[Teams Greens Everywhere] Unable to save the settings backup.', error);
+    }
+  }
+
+  function loadPersistentValue(key, fallback) {
+    const value = GM_getValue(key, null);
+    if (value !== null) {
+      saveLocalValue(key, value);
+      return value;
+    }
+    return loadLocalValue(key) ?? fallback;
+  }
+
+  function savePersistentValue(key, value) {
+    GM_setValue(key, value);
+    saveLocalValue(key, value);
+  }
+
   function loadSettings() {
-    const value = GM_getValue('settings', null);
+    const value = loadPersistentValue('settings', null);
     if (!value) return defaultSettings();
     try {
       const parsed = JSON.parse(value);
@@ -61,18 +94,18 @@
   }
 
   function persistSettings() {
-    GM_setValue('settings', JSON.stringify(settings));
+    savePersistentValue('settings', JSON.stringify(settings));
   }
 
   function saveScheduleSettings() {
     settings.revision = (settings.revision ?? 0) + 1;
     persistSettings();
     cache = {};
-    GM_setValue('resolvedSchedule', JSON.stringify(cache));
+    savePersistentValue('resolvedSchedule', JSON.stringify(cache));
   }
 
   function loadCache() {
-    try { return JSON.parse(GM_getValue('resolvedSchedule', '{}')); }
+    try { return JSON.parse(loadPersistentValue('resolvedSchedule', '{}')); }
     catch { return {}; }
   }
 
@@ -81,7 +114,7 @@
     for (const key of Object.keys(cache)) {
       if (key < cutoff) delete cache[key];
     }
-    GM_setValue('resolvedSchedule', JSON.stringify(cache));
+    savePersistentValue('resolvedSchedule', JSON.stringify(cache));
   }
 
   async function windowsNativeIsActive() {
