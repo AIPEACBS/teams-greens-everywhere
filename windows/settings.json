@@ -2,6 +2,7 @@
   "version": 2,
   "enabled": true,
   "timezone": "auto",
+  "showActivityBanner": true,
   "revision": 1,
   "schedule": {
     "mon": { "enabled": true, "periods": [{"start": "09:00", "end": "17:00", "startJitter": 10, "endJitter": 10}] },

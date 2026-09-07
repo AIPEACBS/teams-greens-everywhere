@@ -34,7 +34,7 @@ function New-DefaultSettings {
         $schedule[$day] = [ordered]@{ enabled = $true; periods = @([ordered]@{ start = '09:00'; end = '17:00'; startJitter = 10; endJitter = 10 }) }
     }
     foreach ($day in @('sat', 'sun')) { $schedule[$day] = [ordered]@{ enabled = $false; periods = @() } }
-    return [pscustomobject]@{ version = 2; revision = 1; enabled = $true; timezone = [System.TimeZoneInfo]::Local.Id; loopbackPort = 23920; schedule = [pscustomobject]$schedule }
+    return [pscustomobject]@{ version = 2; revision = 1; enabled = $true; timezone = [System.TimeZoneInfo]::Local.Id; loopbackPort = 23920; showActivityBanner = $true; schedule = [pscustomobject]$schedule }
 }
 
 function Save-Json {
@@ -51,6 +51,7 @@ function Get-Settings {
                 if ($loaded.timezone -eq 'auto') { $loaded.timezone = [System.TimeZoneInfo]::Local.Id }
                 if (-not $loaded.revision) { $loaded | Add-Member -NotePropertyName revision -NotePropertyValue 1 }
                 if (-not $loaded.loopbackPort) { $loaded | Add-Member -NotePropertyName loopbackPort -NotePropertyValue 23920 }
+                if ($null -eq $loaded.PSObject.Properties['showActivityBanner']) { $loaded | Add-Member -NotePropertyName showActivityBanner -NotePropertyValue $true }
                 return $loaded
             }
         } catch { }
@@ -155,6 +156,14 @@ function Invoke-PresenceSignal {
     [TeamsGreensEverywhereInput]::keybd_event($key, 0, 0, [UIntPtr]::Zero)
     [TeamsGreensEverywhereInput]::keybd_event($key, 0, $keyUp, [UIntPtr]::Zero)
     $script:LastSignalAt = Get-Date
+    Show-ActivityNotification 'Presence signal sent.'
+}
+
+function Show-ActivityNotification {
+    param([string]$Message)
+
+    if (-not [bool]$script:Settings.showActivityBanner -or -not $script:NotifyIcon) { return }
+    $script:NotifyIcon.ShowBalloonTip(3000, $script:AppName, $Message, [System.Windows.Forms.ToolTipIcon]::Info)
 }
 
 function Start-Loopback {
@@ -197,10 +206,32 @@ function Update-Tray {
     $script:NotifyIcon.Icon = if ($script:Settings.enabled) { [System.Drawing.SystemIcons]::Information } else { [System.Drawing.SystemIcons]::Warning }
 }
 
+function Export-Schedule {
+    $dialog = New-Object System.Windows.Forms.SaveFileDialog
+    $dialog.Title = 'Export Teams Greens Everywhere schedule'
+    $dialog.Filter = 'JSON files (*.json)|*.json'
+    $dialog.FileName = 'teams-greens-everywhere-schedule.json'
+    $dialog.InitialDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments)
+    try {
+        if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+        $exportedSettings = [ordered]@{
+            version = $script:Settings.version
+            timezone = $script:Settings.timezone
+            showActivityBanner = [bool]$script:Settings.showActivityBanner
+            schedule = $script:Settings.schedule
+        }
+        $exportedSettings | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $dialog.FileName -Encoding UTF8
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null
+    } finally {
+        $dialog.Dispose()
+    }
+}
+
 function Show-Settings {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "$($script:AppName) Settings"
-    $form.Size = New-Object System.Drawing.Size(800, 500)
+    $form.Size = New-Object System.Drawing.Size(800, 530)
     $form.StartPosition = 'CenterScreen'
 
     $timezoneLabel = New-Object System.Windows.Forms.Label
@@ -216,8 +247,15 @@ function Show-Settings {
     $timezone.SelectedItem = $script:Settings.timezone
     $form.Controls.Add($timezone)
 
+    $activityBanner = New-Object System.Windows.Forms.CheckBox
+    $activityBanner.Text = 'Show activity notification after each presence signal'
+    $activityBanner.Location = New-Object System.Drawing.Point(12, 48)
+    $activityBanner.AutoSize = $true
+    $activityBanner.Checked = [bool]$script:Settings.showActivityBanner
+    $form.Controls.Add($activityBanner)
+
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Location = New-Object System.Drawing.Point(12, 48)
+    $grid.Location = New-Object System.Drawing.Point(12, 78)
     $grid.Size = New-Object System.Drawing.Size(760, 340)
     $grid.AllowUserToAddRows = $false
     $grid.RowHeadersVisible = $false
@@ -240,17 +278,17 @@ function Show-Settings {
 
     $add = New-Object System.Windows.Forms.Button
     $add.Text = 'Add period'
-    $add.Location = New-Object System.Drawing.Point(12, 402)
+    $add.Location = New-Object System.Drawing.Point(12, 432)
     $add.Add_Click({ [void]$grid.Rows.Add('mon', '09:00', '17:00', 10, 10, $true) })
     $form.Controls.Add($add)
     $remove = New-Object System.Windows.Forms.Button
     $remove.Text = 'Remove selected'
-    $remove.Location = New-Object System.Drawing.Point(112, 402)
+    $remove.Location = New-Object System.Drawing.Point(112, 432)
     $remove.Add_Click({ foreach ($row in @($grid.SelectedRows)) { if (-not $row.IsNewRow) { $grid.Rows.Remove($row) } } })
     $form.Controls.Add($remove)
     $save = New-Object System.Windows.Forms.Button
     $save.Text = 'Save'
-    $save.Location = New-Object System.Drawing.Point(632, 402)
+    $save.Location = New-Object System.Drawing.Point(632, 432)
     $save.Add_Click({
         try {
             $next = [ordered]@{}
@@ -265,6 +303,7 @@ function Show-Settings {
                 $next[$key].periods += [pscustomobject]@{ start = $start; end = $end; startJitter = [Math]::Max(0, [int]$row.Cells['StartJitter'].Value); endJitter = [Math]::Max(0, [int]$row.Cells['EndJitter'].Value) }
             }
             $script:Settings.timezone = [string]$timezone.SelectedItem
+            $script:Settings.showActivityBanner = $activityBanner.Checked
             $script:Settings.schedule = [pscustomobject]$next
             Save-Settings
             Update-Tray
@@ -272,6 +311,11 @@ function Show-Settings {
         } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null }
     })
     $form.Controls.Add($save)
+    $export = New-Object System.Windows.Forms.Button
+    $export.Text = 'Export schedule JSON'
+    $export.Location = New-Object System.Drawing.Point(480, 432)
+    $export.Add_Click({ Export-Schedule })
+    $form.Controls.Add($export)
     $form.ShowDialog() | Out-Null
 }
 
