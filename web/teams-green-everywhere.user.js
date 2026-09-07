@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.4
+// @version      2.1.5
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -24,6 +24,7 @@
 
   const POLL_MS = 30_000;
   const MENU_DELAY_MS = 250;
+  const PRESENCE_REFRESH_DELAY_MS = 1_000;
   const LOOPBACK_PORT = 23920;
   const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -102,20 +103,25 @@
     });
   }
 
+  function presenceIsAway() {
+    const avatar = document.querySelector('#idna-me-control-avatar-trigger, [data-tid="me-control-avatar-trigger"]');
+    if (!avatar) return null;
+    return /\baway\b/i.test(avatar.getAttribute('aria-label') ?? '');
+  }
+
   async function restoreAvailable() {
     const avatar = document.querySelector('#idna-me-control-avatar-trigger, [data-tid="me-control-avatar-trigger"]');
-    if (!avatar) return 'No Teams status control found.';
-    if (!/\baway\b/i.test(avatar.getAttribute('aria-label') ?? '')) return 'No action: Teams is not Away.';
+    if (!avatar || !/\baway\b/i.test(avatar.getAttribute('aria-label') ?? '')) return false;
     avatar.click();
     await delay(MENU_DELAY_MS);
     const menu = document.querySelector('[data-tid="set-presence-status-menu-item"]');
-    if (!menu) return 'Could not open the Teams presence menu.';
+    if (!menu) return false;
     menu.click();
     await delay(MENU_DELAY_MS);
     const available = document.querySelector('[data-tid="me_control_presence_availability_available"]');
-    if (!available) return 'Could not find the Available presence option.';
+    if (!available) return false;
     available.click();
-    return 'Requested Teams presence: Available.';
+    return true;
   }
 
   const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -123,16 +129,35 @@
   async function tick() {
     if (!settings.enabled) return;
     if (await windowsNativeIsActive()) {
-      showActivityBanner('Skipped: Windows native support is active.');
+      showActivityBanner('Skipped: Windows native support is active.', 'gray');
       return;
     }
     const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
     saveCache();
     if (!result.active) {
-      showActivityBanner('Checked schedule: outside an active period.');
+      showActivityBanner('Checked schedule: outside an active period.', 'gray');
       return;
     }
-    showActivityBanner(await restoreAvailable());
+
+    const wasAway = presenceIsAway();
+    if (wasAway === null) {
+      showActivityBanner('Available refresh failed.', 'red');
+      return;
+    }
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    await delay(PRESENCE_REFRESH_DELAY_MS);
+    const isAwayAfterClick = presenceIsAway();
+    if (isAwayAfterClick === false) {
+      showActivityBanner('Available refreshed.', wasAway ? 'blue' : 'green');
+      return;
+    }
+    if (!await restoreAvailable()) {
+      showActivityBanner('Available refresh failed.', 'red');
+      return;
+    }
+    await delay(PRESENCE_REFRESH_DELAY_MS);
+    const isAwayAfterFallback = presenceIsAway();
+    showActivityBanner(isAwayAfterFallback === false ? 'Available refreshed with fallback.' : 'Available refresh failed.', isAwayAfterFallback === false ? 'yellow' : 'red');
   }
 
   function restart() {
@@ -164,14 +189,22 @@
     toastTimeout = setTimeout(() => toast.remove(), 5_000);
   }
 
-  function showActivityBanner(message) {
+  function showActivityBanner(message, color) {
     if (!settings.showActivityBanner) return;
     document.querySelector('.tge-activity-banner')?.remove();
+    const colors = {
+      blue: { background: '#0078d4', text: '#fff' },
+      gray: { background: '#3b3a39', text: '#fff' },
+      green: { background: '#107c10', text: '#fff' },
+      red: { background: '#a4262c', text: '#fff' },
+      yellow: { background: '#ffd335', text: '#1e1e1e' },
+    };
+    const selectedColor = colors[color] ?? colors.gray;
     const banner = document.createElement('div');
     banner.className = 'tge-activity-banner';
     banner.setAttribute('role', 'status');
     banner.textContent = `Teams Greens Everywhere: ${message}`;
-    banner.style.cssText = 'position:fixed;left:20px;bottom:20px;z-index:2147483647;max-width:360px;background:#1e1e1e;color:#fff;border:1px solid #666;border-radius:6px;padding:8px 12px;font:13px system-ui;box-shadow:0 4px 16px #0008;';
+    banner.style.cssText = `position:fixed;left:20px;bottom:20px;z-index:2147483647;max-width:360px;background:${selectedColor.background};color:${selectedColor.text};border:1px solid #666;border-radius:6px;padding:8px 12px;font:13px system-ui;box-shadow:0 4px 16px #0008;`;
     document.body.append(banner);
     setTimeout(() => banner.remove(), 5_000);
   }
