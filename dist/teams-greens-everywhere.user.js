@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.5
+// @version      2.1.6
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -239,6 +239,10 @@
     return /\baway\b/i.test(avatar.getAttribute('aria-label') ?? '');
   }
 
+  function activityTarget() {
+    return document.querySelector('#app, #root, [data-tid="app-layout"]') ?? document.body;
+  }
+
   async function restoreAvailable() {
     const avatar = document.querySelector('#idna-me-control-avatar-trigger, [data-tid="me-control-avatar-trigger"]');
     if (!avatar || !/\baway\b/i.test(avatar.getAttribute('aria-label') ?? '')) return false;
@@ -257,37 +261,42 @@
   const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
   async function tick() {
-    if (!settings.enabled) return;
-    if (await windowsNativeIsActive()) {
-      showActivityBanner('Skipped: Windows native support is active.', 'gray');
-      return;
-    }
-    const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
-    saveCache();
-    if (!result.active) {
-      showActivityBanner('Checked schedule: outside an active period.', 'gray');
-      return;
-    }
+    try {
+      if (!settings.enabled) return;
+      if (await windowsNativeIsActive()) {
+        showActivityBanner('Skipped: Windows native support is active.', 'gray');
+        return;
+      }
+      const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
+      saveCache();
+      if (!result.active) {
+        showActivityBanner('Checked schedule: outside an active period.', 'gray');
+        return;
+      }
 
-    const wasAway = presenceIsAway();
-    if (wasAway === null) {
+      const wasAway = presenceIsAway();
+      if (wasAway === null) {
+        showActivityBanner('Available refresh failed.', 'red');
+        return;
+      }
+      activityTarget().click();
+      await delay(PRESENCE_REFRESH_DELAY_MS);
+      const isAwayAfterClick = presenceIsAway();
+      if (isAwayAfterClick === false) {
+        showActivityBanner('Available refreshed.', wasAway ? 'blue' : 'green');
+        return;
+      }
+      if (!await restoreAvailable()) {
+        showActivityBanner('Available refresh failed.', 'red');
+        return;
+      }
+      await delay(PRESENCE_REFRESH_DELAY_MS);
+      const isAwayAfterFallback = presenceIsAway();
+      showActivityBanner(isAwayAfterFallback === false ? 'Available refreshed with fallback.' : 'Available refresh failed.', isAwayAfterFallback === false ? 'yellow' : 'red');
+    } catch (error) {
+      console.error('[Teams Greens Everywhere] Presence refresh failed.', error);
       showActivityBanner('Available refresh failed.', 'red');
-      return;
     }
-    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-    await delay(PRESENCE_REFRESH_DELAY_MS);
-    const isAwayAfterClick = presenceIsAway();
-    if (isAwayAfterClick === false) {
-      showActivityBanner('Available refreshed.', wasAway ? 'blue' : 'green');
-      return;
-    }
-    if (!await restoreAvailable()) {
-      showActivityBanner('Available refresh failed.', 'red');
-      return;
-    }
-    await delay(PRESENCE_REFRESH_DELAY_MS);
-    const isAwayAfterFallback = presenceIsAway();
-    showActivityBanner(isAwayAfterFallback === false ? 'Available refreshed with fallback.' : 'Available refresh failed.', isAwayAfterFallback === false ? 'yellow' : 'red');
   }
 
   function restart() {
