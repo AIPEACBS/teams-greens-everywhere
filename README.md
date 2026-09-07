@@ -32,28 +32,14 @@ Windows sign-in. No administrator access is required.
 
 ## Teams on the web
 
-1. Install [Tampermonkey](https://www.tampermonkey.net/) in Chrome or Firefox.
-2. Open [the userscript](https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js) and confirm its single install prompt.
+1. [Install Tampermonkey](https://www.tampermonkey.net/) in Chrome or Firefox.
+2. [Install the userscript](https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js)
 3. Keep a signed-in Teams tab open. It may remain unfocused in the background.
 
 Tampermonkey’s menu provides Start / Stop, Status, and Settings. Start / Stop
 and Status show an in-page confirmation with the current schedule state.
 During active periods, the script attempts to restore an `Away` status to
 `Available`.
-
-## Publish on Greasy Fork
-
-The installable Greasy Fork file is the readable, self-contained
-[`dist/teams-greens-everywhere.user.js`](dist/teams-greens-everywhere.user.js).
-It has no external `@require` dependency.
-
-1. On Greasy Fork, select **Public user script**.
-2. Open the [published build source](https://raw.githubusercontent.com/AIPEACBS/teams-greens-everywhere/main/dist/teams-greens-everywhere.user.js), copy all of it, and paste it into Greasy Fork's script-code field.
-3. Review the automatically read metadata and publish.
-
-Tampermonkey updates installed copies from the GitHub build URL in the
-userscript metadata. Greasy Fork can be notified of updates with its GitHub
-webhook integration after the first publication.
 
 ## Windows suppresses web
 

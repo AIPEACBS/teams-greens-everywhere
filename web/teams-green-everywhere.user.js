@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.7
+// @version      2.1.8
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -35,7 +35,7 @@
     enabled: true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     suppressWhenWindowsActive: true,
-    showActivityBanner: false,
+    showActivityBanner: true,
     schedule: Object.fromEntries(DAY_KEYS.map((key, index) => [key, {
       enabled: index < 5,
       periods: index < 5 ? [{ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }] : [],
@@ -52,7 +52,9 @@
     if (!value) return defaultSettings();
     try {
       const parsed = JSON.parse(value);
-      return parsed.version === 2 ? parsed : defaultSettings();
+      if (parsed.version !== 2) return defaultSettings();
+      if (typeof parsed.showActivityBanner !== 'boolean') parsed.showActivityBanner = true;
+      return parsed;
     } catch {
       return defaultSettings();
     }
@@ -225,6 +227,7 @@
     const exportedSettings = {
       version: settings.version,
       timezone: settings.timezone,
+      showActivityBanner: settings.showActivityBanner,
       schedule: settings.schedule,
     };
     const download = document.createElement('a');
