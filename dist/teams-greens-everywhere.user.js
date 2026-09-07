@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.6
+// @version      2.1.7
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -246,9 +246,12 @@
   async function restoreAvailable() {
     const avatar = document.querySelector('#idna-me-control-avatar-trigger, [data-tid="me-control-avatar-trigger"]');
     if (!avatar || !/\baway\b/i.test(avatar.getAttribute('aria-label') ?? '')) return false;
-    avatar.click();
-    await delay(MENU_DELAY_MS);
-    const menu = document.querySelector('[data-tid="set-presence-status-menu-item"]');
+    let menu = document.querySelector('[data-tid="set-presence-status-menu-item"]');
+    if (!menu) {
+      avatar.click();
+      await delay(MENU_DELAY_MS);
+      menu = document.querySelector('[data-tid="set-presence-status-menu-item"]');
+    }
     if (!menu) return false;
     menu.click();
     await delay(MENU_DELAY_MS);
