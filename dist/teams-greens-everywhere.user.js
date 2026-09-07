@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.3
+// @version      2.1.4
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
 // @license       Unlicense
@@ -164,6 +164,7 @@
     enabled: true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     suppressWhenWindowsActive: true,
+    showActivityBanner: false,
     schedule: Object.fromEntries(DAY_KEYS.map((key, index) => [key, {
       enabled: index < 5,
       periods: index < 5 ? [{ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }] : [],
@@ -233,23 +234,35 @@
 
   async function restoreAvailable() {
     const avatar = document.querySelector('#idna-me-control-avatar-trigger, [data-tid="me-control-avatar-trigger"]');
-    if (!avatar || !/\baway\b/i.test(avatar.getAttribute('aria-label') ?? '')) return;
+    if (!avatar) return 'No Teams status control found.';
+    if (!/\baway\b/i.test(avatar.getAttribute('aria-label') ?? '')) return 'No action: Teams is not Away.';
     avatar.click();
     await delay(MENU_DELAY_MS);
     const menu = document.querySelector('[data-tid="set-presence-status-menu-item"]');
-    if (!menu) return;
+    if (!menu) return 'Could not open the Teams presence menu.';
     menu.click();
     await delay(MENU_DELAY_MS);
-    document.querySelector('[data-tid="me_control_presence_availability_available"]')?.click();
+    const available = document.querySelector('[data-tid="me_control_presence_availability_available"]');
+    if (!available) return 'Could not find the Available presence option.';
+    available.click();
+    return 'Requested Teams presence: Available.';
   }
 
   const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
   async function tick() {
-    if (!settings.enabled || await windowsNativeIsActive()) return;
+    if (!settings.enabled) return;
+    if (await windowsNativeIsActive()) {
+      showActivityBanner('Skipped: Windows native support is active.');
+      return;
+    }
     const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
     saveCache();
-    if (result.active) await restoreAvailable();
+    if (!result.active) {
+      showActivityBanner('Checked schedule: outside an active period.');
+      return;
+    }
+    showActivityBanner(await restoreAvailable());
   }
 
   function restart() {
@@ -279,6 +292,34 @@
     toast.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483647;max-width:360px;background:#1e1e1e;color:#fff;border:1px solid #666;border-radius:6px;padding:12px 16px;font:14px system-ui;box-shadow:0 4px 16px #0008;';
     document.body.append(toast);
     toastTimeout = setTimeout(() => toast.remove(), 5_000);
+  }
+
+  function showActivityBanner(message) {
+    if (!settings.showActivityBanner) return;
+    document.querySelector('.tge-activity-banner')?.remove();
+    const banner = document.createElement('div');
+    banner.className = 'tge-activity-banner';
+    banner.setAttribute('role', 'status');
+    banner.textContent = `Teams Greens Everywhere: ${message}`;
+    banner.style.cssText = 'position:fixed;left:20px;bottom:20px;z-index:2147483647;max-width:360px;background:#1e1e1e;color:#fff;border:1px solid #666;border-radius:6px;padding:8px 12px;font:13px system-ui;box-shadow:0 4px 16px #0008;';
+    document.body.append(banner);
+    setTimeout(() => banner.remove(), 5_000);
+  }
+
+  function exportSchedule() {
+    const exportedSettings = {
+      version: settings.version,
+      timezone: settings.timezone,
+      schedule: settings.schedule,
+    };
+    const download = document.createElement('a');
+    download.href = URL.createObjectURL(new Blob([JSON.stringify(exportedSettings, null, 2)], { type: 'application/json' }));
+    download.download = 'teams-greens-everywhere-schedule.json';
+    download.style.display = 'none';
+    document.body.append(download);
+    download.click();
+    download.remove();
+    setTimeout(() => URL.revokeObjectURL(download.href), 0);
   }
 
   function showSettings() {
@@ -333,16 +374,21 @@
     const suppress = makeInput('checkbox', '', 'Pause while Windows native support is active');
     suppress.id = 'tge-suppress';
     suppress.checked = settings.suppressWhenWindowsActive;
+    const activityBanner = makeInput('checkbox', '', 'Show activity banner for each 30-second check');
+    activityBanner.id = 'tge-activity-banner';
+    activityBanner.checked = settings.showActivityBanner === true;
     const enabledLabel = makeLabel(' Enabled', enabled);
     const suppressLabel = makeLabel(' Pause while Windows native support is active', suppress);
     suppressLabel.style.marginLeft = '16px';
+    const activityBannerLabel = makeLabel(' Show activity banner for each 30-second check', activityBanner);
+    activityBannerLabel.style.marginLeft = '16px';
     const timezone = makeInput('text', settings.timezone, 'Timezone');
     timezone.id = 'tge-timezone';
     const timezoneParagraph = document.createElement('p');
     timezoneParagraph.append(document.createTextNode('Timezone saved at setup: '), timezone);
     const explanation = document.createElement('p');
     explanation.textContent = 'Each day starts and ends at a separately randomized time within its configured variation.';
-    main.append(heading, enabledLabel, suppressLabel, timezoneParagraph, explanation);
+    main.append(heading, enabledLabel, suppressLabel, activityBannerLabel, timezoneParagraph, explanation);
 
     for (const [index, key] of DAY_KEYS.entries()) {
       const day = settings.schedule[key];
@@ -366,9 +412,11 @@
     const actions = document.createElement('p');
     const save = makeButton('Save');
     save.id = 'tge-save';
+    const exportButton = makeButton('Export schedule JSON');
+    exportButton.id = 'tge-export';
     const close = makeButton('Cancel');
     close.id = 'tge-close';
-    actions.append(save, document.createTextNode(' '), close);
+    actions.append(save, document.createTextNode(' '), exportButton, document.createTextNode(' '), close);
     main.append(actions);
     overlay.append(style, main);
     document.body.append(overlay);
@@ -384,9 +432,11 @@
       if (event.target.matches('[data-remove]')) event.target.closest('.tge-period').remove();
     });
     overlay.querySelector('#tge-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#tge-export').addEventListener('click', exportSchedule);
     overlay.querySelector('#tge-save').addEventListener('click', () => {
       settings.enabled = overlay.querySelector('#tge-enabled').checked;
       settings.suppressWhenWindowsActive = overlay.querySelector('#tge-suppress').checked;
+      settings.showActivityBanner = overlay.querySelector('#tge-activity-banner').checked;
       settings.timezone = overlay.querySelector('#tge-timezone').value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
       for (const key of DAY_KEYS) {
         const section = overlay.querySelector(`[data-day-row="${key}"]`);
