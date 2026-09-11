@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.15
+// @version      2.2.0
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
