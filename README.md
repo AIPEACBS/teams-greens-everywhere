@@ -46,6 +46,10 @@ and Status show an in-page confirmation with the current schedule state.
 During active periods, the script attempts to restore an `Away` status to
 `Available`.
 
+The `Log` menu shows the persisted status history. It keeps the current local
+calendar day by default, with retention configurable in hours or calendar days,
+and can be cleared manually.
+
 ## Windows suppresses web
 
 When the Windows tray app is actively handling a scheduled period, the

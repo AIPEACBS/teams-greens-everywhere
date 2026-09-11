@@ -103,6 +103,31 @@
     return JSON.parse(JSON.stringify(schedule[sourceKey]));
   }
 
+  function localDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function pruneActivityLog(entries, now, retentionValue, retentionUnit) {
+    const value = Number(retentionValue);
+    if (!Number.isInteger(value) || value < 1 || !['hours', 'days'].includes(retentionUnit)) {
+      throw new Error('Invalid activity log retention.');
+    }
+    if (retentionUnit === 'days') {
+      const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - value + 1);
+      const cutoffKey = localDateKey(cutoff);
+      return entries.filter((entry) => {
+        if (typeof entry.date === 'string') return entry.date >= cutoffKey;
+        const timestamp = new Date(entry.timestamp);
+        return !Number.isNaN(timestamp.getTime()) && localDateKey(timestamp) >= cutoffKey;
+      });
+    }
+    const cutoff = now.getTime() - value * 60 * 60 * 1000;
+    return entries.filter((entry) => {
+      const timestamp = new Date(entry.timestamp);
+      return !Number.isNaN(timestamp.getTime()) && timestamp.getTime() >= cutoff;
+    });
+  }
+
   function zonedDateTime(dateKey, time, timezone) {
     const [year, month, day] = dateKey.split('-').map(Number);
     const { hour, minute } = parseTime(time);
@@ -170,5 +195,5 @@
     return { active: periods.some((period) => instant >= period.start && instant <= period.end), periods };
   }
 
-  return { addDays, copyDay, dateKeyFor, dayKeyFor, evaluate, resolveDate, timezoneFor, validatePortableSettings };
+  return { addDays, copyDay, dateKeyFor, dayKeyFor, evaluate, localDateKey, pruneActivityLog, resolveDate, timezoneFor, validatePortableSettings };
 });

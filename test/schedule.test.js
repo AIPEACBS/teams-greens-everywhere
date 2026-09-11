@@ -115,3 +115,12 @@ test('copies a weekday as an independent day', () => {
   copied.periods[0].start = '10:00';
   assert.equal(settings.schedule.mon.periods[0].start, '09:00');
 });
+
+test('prunes activity logs by calendar day or rolling hours', () => {
+  const now = new Date(2026, 8, 3, 12, 0, 0);
+  const dates = [new Date(2026, 8, 1, 23), new Date(2026, 8, 2, 23), new Date(2026, 8, 3, 11)];
+  const entries = dates.map((date, index) => ({ timestamp: date.toISOString(), date: schedule.localDateKey(date), message: String(index) }));
+  assert.deepEqual(schedule.pruneActivityLog(entries, now, 1, 'days').map((entry) => entry.message), ['2']);
+  assert.deepEqual(schedule.pruneActivityLog(entries, now, 2, 'days').map((entry) => entry.message), ['1', '2']);
+  assert.deepEqual(schedule.pruneActivityLog(entries, now, 2, 'hours').map((entry) => entry.message), ['2']);
+});

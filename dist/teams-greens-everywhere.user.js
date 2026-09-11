@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.13
+// @version      2.1.15
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -125,6 +125,31 @@
     return JSON.parse(JSON.stringify(schedule[sourceKey]));
   }
 
+  function localDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function pruneActivityLog(entries, now, retentionValue, retentionUnit) {
+    const value = Number(retentionValue);
+    if (!Number.isInteger(value) || value < 1 || !['hours', 'days'].includes(retentionUnit)) {
+      throw new Error('Invalid activity log retention.');
+    }
+    if (retentionUnit === 'days') {
+      const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - value + 1);
+      const cutoffKey = localDateKey(cutoff);
+      return entries.filter((entry) => {
+        if (typeof entry.date === 'string') return entry.date >= cutoffKey;
+        const timestamp = new Date(entry.timestamp);
+        return !Number.isNaN(timestamp.getTime()) && localDateKey(timestamp) >= cutoffKey;
+      });
+    }
+    const cutoff = now.getTime() - value * 60 * 60 * 1000;
+    return entries.filter((entry) => {
+      const timestamp = new Date(entry.timestamp);
+      return !Number.isNaN(timestamp.getTime()) && timestamp.getTime() >= cutoff;
+    });
+  }
+
   function zonedDateTime(dateKey, time, timezone) {
     const [year, month, day] = dateKey.split('-').map(Number);
     const { hour, minute } = parseTime(time);
@@ -192,7 +217,7 @@
     return { active: periods.some((period) => instant >= period.start && instant <= period.end), periods };
   }
 
-  return { addDays, copyDay, dateKeyFor, dayKeyFor, evaluate, resolveDate, timezoneFor, validatePortableSettings };
+  return { addDays, copyDay, dateKeyFor, dayKeyFor, evaluate, localDateKey, pruneActivityLog, resolveDate, timezoneFor, validatePortableSettings };
 });
 
 
@@ -214,6 +239,8 @@
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     suppressWhenWindowsActive: true,
     showActivityBanner: true,
+    activityLogRetentionValue: 1,
+    activityLogRetentionUnit: 'days',
     schedule: Object.fromEntries(DAY_KEYS.map((key, index) => [key, {
       enabled: index < 5,
       periods: index < 5 ? [{ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }] : [],
@@ -222,6 +249,8 @@
 
   const settings = loadSettings();
   let cache = loadCache();
+  let activityLog = loadActivityLog();
+  saveActivityLog();
   let timer;
   let toastTimeout;
 
@@ -263,6 +292,8 @@
       const parsed = JSON.parse(value);
       if (parsed.version !== 2) return defaultSettings();
       if (typeof parsed.showActivityBanner !== 'boolean') parsed.showActivityBanner = true;
+      if (!Number.isInteger(parsed.activityLogRetentionValue) || parsed.activityLogRetentionValue < 1) parsed.activityLogRetentionValue = 1;
+      if (!['hours', 'days'].includes(parsed.activityLogRetentionUnit)) parsed.activityLogRetentionUnit = 'days';
       return parsed;
     } catch {
       return defaultSettings();
@@ -283,6 +314,33 @@
   function loadCache() {
     try { return JSON.parse(loadPersistentValue('resolvedSchedule', '{}')); }
     catch { return {}; }
+  }
+
+  function saveActivityLog() {
+    try {
+      GM_setValue('activityLog', JSON.stringify(activityLog));
+    } catch (error) {
+      console.error('[Teams Greens Everywhere] Unable to save the activity log.', error);
+    }
+  }
+
+  function loadActivityLog() {
+    try {
+      const value = GM_getValue('activityLog', '[]');
+      const parsed = JSON.parse(typeof value === 'string' ? value : '[]');
+      if (!Array.isArray(parsed)) return [];
+      return TeamsGreenSchedule.pruneActivityLog(parsed, new Date(), settings.activityLogRetentionValue, settings.activityLogRetentionUnit);
+    } catch (error) {
+      console.error('[Teams Greens Everywhere] Unable to read the activity log.', error);
+      return [];
+    }
+  }
+
+  function recordStatus(message, color) {
+    activityLog = TeamsGreenSchedule.pruneActivityLog(activityLog, new Date(), settings.activityLogRetentionValue, settings.activityLogRetentionUnit);
+    const now = new Date();
+    activityLog.push({ timestamp: now.toISOString(), date: TeamsGreenSchedule.localDateKey(now), message, color });
+    saveActivityLog();
   }
 
   function saveCache() {
@@ -402,10 +460,13 @@
   function currentStatusMessage() {
     const result = TeamsGreenSchedule.evaluate(settings, new Date(), cache);
     saveCache();
-    if (!settings.enabled) return 'Stopped. No Teams presence checks are running.';
-    return result.active
+    const message = !settings.enabled
+      ? 'Stopped. No Teams presence checks are running.'
+      : result.active
       ? 'Enabled. Active now; Teams is checked every 30 seconds.'
       : 'Enabled. Waiting for the next scheduled period.';
+    recordStatus(message, settings.enabled ? 'green' : 'gray');
+    return message;
   }
 
   function showToast(message) {
@@ -421,7 +482,8 @@
   }
 
   function showActivityBanner(message, color) {
-    if (!settings.showActivityBanner) return;
+    recordStatus(message, color);
+    if (!settings.showActivityBanner || color === 'yellow') return;
     document.querySelector('.tge-activity-banner')?.remove();
     const colors = {
       blue: { background: '#0078d4', text: '#fff' },
@@ -438,6 +500,56 @@
     banner.style.cssText = `position:fixed;left:20px;bottom:20px;z-index:2147483647;max-width:360px;background:${selectedColor.background};color:${selectedColor.text};border:1px solid #666;border-radius:6px;padding:8px 12px;font:13px system-ui;box-shadow:0 4px 16px #0008;`;
     document.body.append(banner);
     setTimeout(() => banner.remove(), 5_000);
+  }
+
+  function showActivityLog() {
+    document.querySelector('.tge-log-overlay')?.remove();
+    activityLog = TeamsGreenSchedule.pruneActivityLog(activityLog, new Date(), settings.activityLogRetentionValue, settings.activityLogRetentionUnit);
+    saveActivityLog();
+    const overlay = document.createElement('div');
+    overlay.className = 'tge-log-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0009;color:#f5f5f5;font:14px system-ui;overflow:auto;padding:24px;';
+    const main = document.createElement('main');
+    main.style.cssText = 'max-width:820px;margin:auto;background:#1e1e1e;padding:24px;border-radius:8px;';
+    const heading = document.createElement('h2');
+    heading.textContent = 'Activity log';
+    const description = document.createElement('p');
+    description.textContent = `Showing ${activityLog.length} status entries. Retention: ${settings.activityLogRetentionValue} ${settings.activityLogRetentionUnit}.`;
+    const list = document.createElement('ol');
+    list.style.cssText = 'max-height:60vh;overflow:auto;padding:0 0 0 28px;';
+    const colors = { blue: '#61b5f5', gray: '#aaa', green: '#5bd35b', red: '#ff7777', yellow: '#ffd335' };
+    for (const entry of [...activityLog].reverse()) {
+      const item = document.createElement('li');
+      item.style.cssText = `padding:6px 0;color:${colors[entry.color] ?? '#fff'};`;
+      const timestamp = document.createElement('time');
+      timestamp.dateTime = entry.timestamp;
+      timestamp.textContent = new Date(entry.timestamp).toLocaleString();
+      item.append(timestamp, document.createTextNode(` - ${entry.message}`));
+      list.append(item);
+    }
+    if (activityLog.length === 0) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No status entries.';
+      list.append(empty);
+    }
+    const actions = document.createElement('p');
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.textContent = 'Clear log';
+    clear.addEventListener('click', () => {
+      activityLog = [];
+      saveActivityLog();
+      overlay.remove();
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.style.marginLeft = '8px';
+    close.addEventListener('click', () => overlay.remove());
+    actions.append(clear, close);
+    main.append(heading, description, list, actions);
+    overlay.append(main);
+    document.body.append(overlay);
   }
 
   function exportSchedule() {
@@ -517,13 +629,27 @@
     suppressLabel.style.marginLeft = '16px';
     const activityBannerLabel = makeLabel(' Show activity banner for each 30-second check', activityBanner);
     activityBannerLabel.style.marginLeft = '16px';
+    const logRetentionValue = makeInput('number', settings.activityLogRetentionValue, 'Activity log retention value');
+    logRetentionValue.min = '1';
+    logRetentionValue.max = '8760';
+    const logRetentionUnit = document.createElement('select');
+    logRetentionUnit.setAttribute('aria-label', 'Activity log retention unit');
+    for (const unit of ['hours', 'days']) {
+      const option = document.createElement('option');
+      option.value = unit;
+      option.textContent = unit;
+      option.selected = settings.activityLogRetentionUnit === unit;
+      logRetentionUnit.append(option);
+    }
+    const logRetentionParagraph = document.createElement('p');
+    logRetentionParagraph.append(document.createTextNode('Activity log retention: '), logRetentionValue, document.createTextNode(' '), logRetentionUnit);
     const timezone = makeInput('text', settings.timezone, 'Timezone');
     timezone.id = 'tge-timezone';
     const timezoneParagraph = document.createElement('p');
     timezoneParagraph.append(document.createTextNode('Timezone saved at setup: '), timezone);
     const explanation = document.createElement('p');
     explanation.textContent = 'Each day starts and ends at a separately randomized time within its configured variation.';
-    main.append(heading, enabledLabel, suppressLabel, activityBannerLabel, timezoneParagraph, explanation);
+    main.append(heading, enabledLabel, suppressLabel, activityBannerLabel, logRetentionParagraph, timezoneParagraph, explanation);
 
     for (const [index, key] of DAY_KEYS.entries()) {
       const day = settings.schedule[key];
@@ -659,6 +785,15 @@
       settings.enabled = overlay.querySelector('#tge-enabled').checked;
       settings.suppressWhenWindowsActive = overlay.querySelector('#tge-suppress').checked;
       settings.showActivityBanner = overlay.querySelector('#tge-activity-banner').checked;
+      const nextRetentionValue = Number(logRetentionValue.value);
+      if (!Number.isInteger(nextRetentionValue) || nextRetentionValue < 1 || nextRetentionValue > 8760 || !['hours', 'days'].includes(logRetentionUnit.value)) {
+        showToast('Activity log retention must be a whole number from 1 to 8760.');
+        return;
+      }
+      settings.activityLogRetentionValue = nextRetentionValue;
+      settings.activityLogRetentionUnit = logRetentionUnit.value;
+      activityLog = TeamsGreenSchedule.pruneActivityLog(activityLog, new Date(), settings.activityLogRetentionValue, settings.activityLogRetentionUnit);
+      saveActivityLog();
       settings.timezone = overlay.querySelector('#tge-timezone').value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
       for (const key of DAY_KEYS) {
         const section = overlay.querySelector(`[data-day-row="${key}"]`);
@@ -698,6 +833,7 @@
     console.info(`[Teams Greens Everywhere] ${message}`);
     showToast(message);
   });
+  GM_registerMenuCommand('Log', showActivityLog);
 
   restart();
 })();
