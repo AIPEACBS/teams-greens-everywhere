@@ -15,6 +15,11 @@ The app chooses each day’s varied start and end once, then saves them. Restart
 the Windows app or browser does not choose a new time. A period whose end time
 is earlier than its start time runs overnight.
 
+Settings can be exported and imported as portable JSON. The same file can be
+used by the browser and Windows versions; imported schedules use each client’s
+local timezone. A day’s settings can also be applied to another weekday from
+the settings panel.
+
 ## Windows native Teams
 
 The Windows tray menu offers Start, Stop, Run Once Now, Settings, and Exit.

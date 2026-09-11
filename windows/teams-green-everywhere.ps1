@@ -66,6 +66,35 @@ function Save-Settings {
     Save-Json $script:Resolved $script:ResolvedPath
 }
 
+function Assert-PortableSchedule {
+    param($Value)
+    if ($null -eq $Value -or $Value -is [array]) { throw 'Imported JSON must contain an object.' }
+    if ([int]$Value.version -ne 2) { throw 'Unsupported schedule JSON version.' }
+    if ([string]$Value.timezone -notmatch '\S') { throw 'Schedule JSON has an invalid timezone.' }
+    if ($Value.showActivityBanner -isnot [bool]) { throw 'Schedule JSON has an invalid activity banner setting.' }
+    if ($null -eq $Value.schedule) { throw 'Schedule JSON is missing the schedule.' }
+
+    foreach ($key in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) {
+        $dayProperty = $Value.schedule.PSObject.Properties[$key]
+        if ($null -eq $dayProperty) { throw "Schedule JSON is missing the $key day." }
+        $day = $dayProperty.Value
+        if ($null -eq $day -or $day.enabled -isnot [bool] -or $null -eq $day.periods) { throw "Schedule JSON has an invalid $key day." }
+        foreach ($period in @($day.periods)) {
+            if ($null -eq $period -or [string]$period.start -notmatch '^([01]\d|2[0-3]):[0-5]\d$' -or [string]$period.end -notmatch '^([01]\d|2[0-3]):[0-5]\d$') {
+                throw "Schedule JSON has an invalid $key period."
+            }
+            foreach ($field in @('startJitter', 'endJitter')) {
+                $property = $period.PSObject.Properties[$field]
+                [int]$jitter = 0
+                if ($null -eq $property -or -not [int]::TryParse([string]$property.Value, [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]$jitter) -or $jitter -lt 0) {
+                    throw "Schedule JSON has an invalid $key variation."
+                }
+            }
+        }
+    }
+    return $Value
+}
+
 function Persist-Settings {
     Save-Json $script:Settings $script:SettingsPath
 }
@@ -216,7 +245,7 @@ function Export-Schedule {
         if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
         $exportedSettings = [ordered]@{
             version = $script:Settings.version
-            timezone = $script:Settings.timezone
+            timezone = 'auto'
             showActivityBanner = [bool]$script:Settings.showActivityBanner
             schedule = $script:Settings.schedule
         }
@@ -228,10 +257,27 @@ function Export-Schedule {
     }
 }
 
+function Import-Schedule {
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = 'Import Teams Greens Everywhere schedule'
+    $dialog.Filter = 'JSON files (*.json)|*.json'
+    $dialog.InitialDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments)
+    try {
+        if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+        $value = Get-Content -LiteralPath $dialog.FileName -Raw | ConvertFrom-Json
+        return Assert-PortableSchedule $value
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null
+        return $null
+    } finally {
+        $dialog.Dispose()
+    }
+}
+
 function Show-Settings {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "$($script:AppName) Settings"
-    $form.Size = New-Object System.Drawing.Size(800, 530)
+    $form.Size = New-Object System.Drawing.Size(800, 570)
     $form.StartPosition = 'CenterScreen'
 
     $timezoneLabel = New-Object System.Windows.Forms.Label
@@ -259,6 +305,8 @@ function Show-Settings {
     $grid.Size = New-Object System.Drawing.Size(760, 340)
     $grid.AllowUserToAddRows = $false
     $grid.RowHeadersVisible = $false
+    $dayEnabled = @{}
+    foreach ($dayKey in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) { $dayEnabled[$dayKey] = [bool]$script:Settings.schedule.$dayKey.enabled }
     [void]$grid.Columns.Add('Day', 'Day')
     [void]$grid.Columns.Add('Start', 'Start (HH:mm)')
     [void]$grid.Columns.Add('End', 'End (HH:mm)')
@@ -286,13 +334,56 @@ function Show-Settings {
     $remove.Location = New-Object System.Drawing.Point(112, 432)
     $remove.Add_Click({ foreach ($row in @($grid.SelectedRows)) { if (-not $row.IsNewRow) { $grid.Rows.Remove($row) } } })
     $form.Controls.Add($remove)
+    $sourceLabel = New-Object System.Windows.Forms.Label
+    $sourceLabel.Text = 'Copy from:'
+    $sourceLabel.Location = New-Object System.Drawing.Point(220, 437)
+    $sourceLabel.AutoSize = $true
+    $form.Controls.Add($sourceLabel)
+    $source = New-Object System.Windows.Forms.ComboBox
+    $source.Location = New-Object System.Drawing.Point(280, 432)
+    $source.Width = 90
+    $source.DropDownStyle = 'DropDownList'
+    [void]$source.Items.AddRange(@('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'))
+    $source.SelectedIndex = 0
+    $form.Controls.Add($source)
+    $targetLabel = New-Object System.Windows.Forms.Label
+    $targetLabel.Text = 'to:'
+    $targetLabel.Location = New-Object System.Drawing.Point(380, 437)
+    $targetLabel.AutoSize = $true
+    $form.Controls.Add($targetLabel)
+    $target = New-Object System.Windows.Forms.ComboBox
+    $target.Location = New-Object System.Drawing.Point(405, 432)
+    $target.Width = 90
+    $target.DropDownStyle = 'DropDownList'
+    [void]$target.Items.AddRange(@('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'))
+    $target.SelectedIndex = 1
+    $form.Controls.Add($target)
+    $apply = New-Object System.Windows.Forms.Button
+    $apply.Text = 'Apply settings'
+    $apply.Location = New-Object System.Drawing.Point(505, 430)
+    $apply.Add_Click({
+        try {
+            $sourceKey = [string]$source.SelectedItem
+            $targetKey = [string]$target.SelectedItem
+            if ($sourceKey -eq $targetKey) { throw 'Source and target days must be different.' }
+            $sourceRows = @($grid.Rows | Where-Object { -not $_.IsNewRow -and [string]$_.Cells['Day'].Value -eq $sourceKey })
+            $sourceIsEnabled = [bool]$dayEnabled[$sourceKey]
+            if ($sourceRows.Count -gt 0) { $sourceIsEnabled = [bool]$sourceRows[0].Cells['Enabled'].Value }
+            foreach ($row in @($grid.Rows | Where-Object { -not $_.IsNewRow -and [string]$_.Cells['Day'].Value -eq $targetKey })) { $grid.Rows.Remove($row) }
+            $dayEnabled[$targetKey] = $sourceIsEnabled
+            foreach ($row in $sourceRows) {
+                [void]$grid.Rows.Add($targetKey, $row.Cells['Start'].Value, $row.Cells['End'].Value, $row.Cells['StartJitter'].Value, $row.Cells['EndJitter'].Value, $sourceIsEnabled)
+            }
+        } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null }
+    })
+    $form.Controls.Add($apply)
     $save = New-Object System.Windows.Forms.Button
     $save.Text = 'Save'
-    $save.Location = New-Object System.Drawing.Point(632, 432)
+    $save.Location = New-Object System.Drawing.Point(632, 470)
     $save.Add_Click({
         try {
             $next = [ordered]@{}
-            foreach ($key in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) { $next[$key] = [ordered]@{ enabled = $false; periods = @() } }
+            foreach ($key in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) { $next[$key] = [ordered]@{ enabled = [bool]$dayEnabled[$key]; periods = @() } }
             foreach ($row in $grid.Rows) {
                 if ($row.IsNewRow) { continue }
                 $key = [string]$row.Cells['Day'].Value
@@ -311,9 +402,30 @@ function Show-Settings {
         } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null }
     })
     $form.Controls.Add($save)
+    $import = New-Object System.Windows.Forms.Button
+    $import.Text = 'Import schedule JSON'
+    $import.Location = New-Object System.Drawing.Point(12, 470)
+    $import.Add_Click({
+        $imported = Import-Schedule
+        if ($null -eq $imported) { return }
+        try {
+            $dayEnabled.Clear()
+            $grid.Rows.Clear()
+            foreach ($key in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) {
+                $day = $imported.schedule.PSObject.Properties[$key].Value
+                $dayEnabled[$key] = [bool]$day.enabled
+                foreach ($period in @($day.periods)) {
+                    [void]$grid.Rows.Add($key, $period.start, $period.end, $period.startJitter, $period.endJitter, $day.enabled)
+                }
+            }
+            $timezone.SelectedItem = [System.TimeZoneInfo]::Local.Id
+            $activityBanner.Checked = [bool]$imported.showActivityBanner
+        } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null }
+    })
+    $form.Controls.Add($import)
     $export = New-Object System.Windows.Forms.Button
     $export.Text = 'Export schedule JSON'
-    $export.Location = New-Object System.Drawing.Point(480, 432)
+    $export.Location = New-Object System.Drawing.Point(480, 470)
     $export.Add_Click({ Export-Schedule })
     $form.Controls.Add($export)
     $form.ShowDialog() | Out-Null

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.10
+// @version      2.1.11
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -267,7 +267,7 @@
   function exportSchedule() {
     const exportedSettings = {
       version: settings.version,
-      timezone: settings.timezone,
+      timezone: 'auto',
       showActivityBanner: settings.showActivityBanner,
       schedule: settings.schedule,
     };
@@ -322,7 +322,7 @@
     };
 
     const style = document.createElement('style');
-    style.textContent = '.tge-overlay .tge-period{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.tge-overlay [data-day-row]{margin:16px 0;padding:12px;border:1px solid #444;border-radius:6px}.tge-overlay .tge-period input{max-width:120px}.tge-overlay button{cursor:pointer}';
+    style.textContent = '.tge-overlay .tge-period{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.tge-overlay [data-day-row]{margin:16px 0;padding:12px;border:1px solid #444;border-radius:6px}.tge-overlay .tge-day-header{display:flex;justify-content:space-between;align-items:center;gap:12px}.tge-overlay .tge-period input{max-width:120px}.tge-overlay button{cursor:pointer}';
     const main = document.createElement('main');
     main.style.cssText = 'max-width:820px;margin:auto;background:#1e1e1e;padding:24px;border-radius:8px';
     const heading = document.createElement('h2');
@@ -359,23 +359,52 @@
       const dayTitle = document.createElement('strong');
       dayTitle.textContent = DAY_NAMES[index];
       dayLabel.append(dayEnabled, document.createTextNode(' '), dayTitle);
+      const dayHeader = document.createElement('div');
+      dayHeader.className = 'tge-day-header';
+      const applyTarget = document.createElement('select');
+      applyTarget.setAttribute('aria-label', `Apply ${DAY_NAMES[index]} settings to`);
+      const applyPlaceholder = document.createElement('option');
+      applyPlaceholder.textContent = 'Choose target day';
+      applyPlaceholder.value = '';
+      applyPlaceholder.disabled = true;
+      applyPlaceholder.selected = true;
+      applyTarget.append(applyPlaceholder);
+      for (const [targetIndex, targetKey] of DAY_KEYS.entries()) {
+        if (targetKey === key) continue;
+        const option = document.createElement('option');
+        option.value = targetKey;
+        option.textContent = DAY_NAMES[targetIndex];
+        applyTarget.append(option);
+      }
+      const apply = makeButton('Apply settings');
+      apply.dataset.apply = key;
+      apply.disabled = true;
+      applyTarget.addEventListener('change', () => { apply.disabled = !applyTarget.value; });
+      dayHeader.append(dayLabel, applyTarget, apply);
       const periods = document.createElement('div');
       periods.className = 'tge-periods';
       for (const period of day.periods) periods.append(makePeriod(period, DAY_NAMES[index]));
       const add = makeButton('Add period');
       add.dataset.add = key;
-      section.append(dayLabel, periods, add);
+      section.append(dayHeader, periods, add);
       main.append(section);
     }
 
     const actions = document.createElement('p');
     const save = makeButton('Save');
     save.id = 'tge-save';
+    const importButton = makeButton('Import schedule JSON');
+    importButton.id = 'tge-import';
+    const importInput = document.createElement('input');
+    importInput.type = 'file';
+    importInput.accept = '.json,application/json';
+    importInput.style.display = 'none';
+    importInput.id = 'tge-import-input';
     const exportButton = makeButton('Export schedule JSON');
     exportButton.id = 'tge-export';
     const close = makeButton('Cancel');
     close.id = 'tge-close';
-    actions.append(save, document.createTextNode(' '), exportButton, document.createTextNode(' '), close);
+    actions.append(save, document.createTextNode(' '), importButton, document.createTextNode(' '), exportButton, document.createTextNode(' '), close, importInput);
     main.append(actions);
     overlay.append(style, main);
     document.body.append(overlay);
@@ -386,11 +415,52 @@
       const dayIndex = DAY_KEYS.indexOf(key);
       container.append(makePeriod({ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }, DAY_NAMES[dayIndex]));
     };
+    const readDay = (key) => {
+      const section = overlay.querySelector(`[data-day-row="${key}"]`);
+      return {
+        enabled: section.querySelector('input[type="checkbox"]').checked,
+        periods: [...section.querySelectorAll('.tge-period')].map((field) => {
+          const inputs = field.querySelectorAll('input');
+          return { start: inputs[0].value, end: inputs[1].value, startJitter: Number(inputs[2].value), endJitter: Number(inputs[3].value) };
+        }),
+      };
+    };
+    const writeDay = (key, day) => {
+      const section = overlay.querySelector(`[data-day-row="${key}"]`);
+      section.querySelector('input[type="checkbox"]').checked = day.enabled;
+      const periods = section.querySelector('.tge-periods');
+      periods.replaceChildren(...day.periods.map((period) => makePeriod(period, DAY_NAMES[DAY_KEYS.indexOf(key)])));
+    };
     overlay.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => addPeriod(button.dataset.add)));
+    overlay.querySelectorAll('[data-apply]').forEach((button) => button.addEventListener('click', () => {
+      const sourceKey = button.dataset.apply;
+      const target = button.parentElement.querySelector('select');
+      if (!target.value) return;
+      writeDay(target.value, TeamsGreenSchedule.copyDay({ [sourceKey]: readDay(sourceKey) }, sourceKey, target.value));
+      showToast(`${DAY_NAMES[DAY_KEYS.indexOf(sourceKey)]} settings applied to ${DAY_NAMES[DAY_KEYS.indexOf(target.value)]}.`);
+      target.value = '';
+      button.disabled = true;
+    }));
     overlay.addEventListener('click', (event) => {
       if (event.target.matches('[data-remove]')) event.target.closest('.tge-period').remove();
     });
     overlay.querySelector('#tge-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#tge-import').addEventListener('click', () => importInput.click());
+    importInput.addEventListener('change', async () => {
+      const file = importInput.files?.[0];
+      if (!file) return;
+      try {
+        const imported = TeamsGreenSchedule.validatePortableSettings(JSON.parse(await file.text()));
+        overlay.querySelector('#tge-timezone').value = 'auto';
+        overlay.querySelector('#tge-activity-banner').checked = imported.showActivityBanner;
+        for (const key of DAY_KEYS) writeDay(key, imported.schedule[key]);
+        showToast('Schedule JSON imported. Press Save to apply it.');
+      } catch (error) {
+        showToast(`Schedule JSON import failed: ${error.message}`);
+      } finally {
+        importInput.value = '';
+      }
+    });
     overlay.querySelector('#tge-export').addEventListener('click', exportSchedule);
     overlay.querySelector('#tge-save').addEventListener('click', () => {
       settings.enabled = overlay.querySelector('#tge-enabled').checked;

@@ -3,7 +3,7 @@
   "description": "The schedule structure used independently by the Windows tray runtime and Tampermonkey userscript.",
   "settings": {
     "enabled": "boolean",
-    "timezone": "A timezone identifier detected on first setup and editable later.",
+    "timezone": "A runtime timezone identifier detected on first setup and editable later; portable schedule JSON uses auto.",
     "schedule": {
       "mon|tue|wed|thu|fri|sat|sun": {
         "enabled": "boolean",
@@ -19,6 +19,7 @@
     }
   },
   "rules": [
+    "Portable schedule JSON uses timezone auto so the same file works in the browser and Windows clients, with each client using its local timezone.",
     "Each period receives one independently chosen start offset and one independently chosen end offset in its inclusive configured range.",
     "Resolved offsets are persisted per schedule date and settings revision, so an app or browser restart does not change them.",
     "The active state is true when any resolved period contains the current time.",

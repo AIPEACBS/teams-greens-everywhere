@@ -8,6 +8,7 @@
   'use strict';
 
   const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const PORTABLE_DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
   function timezoneFor(settings) {
     return settings.timezone === 'auto' || !settings.timezone
@@ -55,6 +56,51 @@
       throw new Error(`Invalid schedule time: ${value}`);
     }
     return { hour: Number(match[1]), minute: Number(match[2]) };
+  }
+
+  function isRecord(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function validatePortableSettings(value) {
+    if (!isRecord(value)) throw new Error('Imported JSON must contain an object.');
+    if (value.version !== 2) throw new Error('Unsupported schedule JSON version.');
+    if (typeof value.timezone !== 'string' || !value.timezone.trim()) throw new Error('Schedule JSON has an invalid timezone.');
+    if (typeof value.showActivityBanner !== 'boolean') throw new Error('Schedule JSON has an invalid activity banner setting.');
+    if (!isRecord(value.schedule)) throw new Error('Schedule JSON is missing the schedule.');
+
+    for (const key of PORTABLE_DAY_KEYS) {
+      const day = value.schedule[key];
+      if (!isRecord(day) || typeof day.enabled !== 'boolean' || !Array.isArray(day.periods)) {
+        throw new Error(`Schedule JSON has an invalid ${key} day.`);
+      }
+      for (const period of day.periods) {
+        if (!isRecord(period) || typeof period.start !== 'string' || typeof period.end !== 'string') {
+          throw new Error(`Schedule JSON has an invalid ${key} period.`);
+        }
+        try {
+          parseTime(period.start);
+          parseTime(period.end);
+        } catch {
+          throw new Error(`Schedule JSON has an invalid ${key} period.`);
+        }
+        for (const field of ['startJitter', 'endJitter']) {
+          if (!Number.isInteger(period[field]) || period[field] < 0) {
+            throw new Error(`Schedule JSON has an invalid ${key} variation.`);
+          }
+        }
+      }
+    }
+    return value;
+  }
+
+  function copyDay(schedule, sourceKey, targetKey) {
+    if (!isRecord(schedule) || !PORTABLE_DAY_KEYS.includes(sourceKey) || !PORTABLE_DAY_KEYS.includes(targetKey)) {
+      throw new Error('Invalid source or target day.');
+    }
+    if (!schedule[sourceKey]) throw new Error(`Missing source day: ${sourceKey}`);
+    if (sourceKey === targetKey) throw new Error('Source and target days must be different.');
+    return JSON.parse(JSON.stringify(schedule[sourceKey]));
   }
 
   function zonedDateTime(dateKey, time, timezone) {
@@ -124,5 +170,5 @@
     return { active: periods.some((period) => instant >= period.start && instant <= period.end), periods };
   }
 
-  return { addDays, dateKeyFor, dayKeyFor, evaluate, resolveDate, timezoneFor };
+  return { addDays, copyDay, dateKeyFor, dayKeyFor, evaluate, resolveDate, timezoneFor, validatePortableSettings };
 });

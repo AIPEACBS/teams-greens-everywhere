@@ -24,6 +24,23 @@ function weekdaySchedule(periods) {
   };
 }
 
+function portableSettings() {
+  return {
+    version: 2,
+    timezone: 'auto',
+    showActivityBanner: true,
+    schedule: {
+      mon: { enabled: true, periods: [{ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }] },
+      tue: { enabled: false, periods: [] },
+      wed: { enabled: false, periods: [] },
+      thu: { enabled: false, periods: [] },
+      fri: { enabled: false, periods: [] },
+      sat: { enabled: false, periods: [] },
+      sun: { enabled: false, periods: [] },
+    },
+  };
+}
+
 test('evaluates an enabled weekday period', () => {
   const settings = settingsFor(weekdaySchedule([{ start: '09:00', end: '17:00', startJitter: 0, endJitter: 0 }]));
   const result = schedule.evaluate(settings, new Date('2026-09-07T10:00:00Z'), {});
@@ -79,4 +96,22 @@ test('respects the top-level Start / Stop setting', () => {
   const settings = settingsFor(weekdaySchedule([{ start: '09:00', end: '17:00', startJitter: 0, endJitter: 0 }]));
   settings.enabled = false;
   assert.equal(schedule.evaluate(settings, new Date('2026-09-07T10:00:00Z'), {}).active, false);
+});
+
+test('validates the portable schedule format', () => {
+  const settings = portableSettings();
+  assert.equal(schedule.validatePortableSettings(settings), settings);
+  assert.equal(schedule.validatePortableSettings({ ...settings, timezone: 'America/New_York' }).timezone, 'America/New_York');
+  assert.throws(() => schedule.validatePortableSettings({ ...settings, timezone: '' }), /invalid timezone/);
+  assert.throws(() => schedule.validatePortableSettings({ ...settings, schedule: { ...settings.schedule, tue: { enabled: true, periods: [{ start: '25:00', end: '17:00', startJitter: 0, endJitter: 0 }] } } }), /invalid tue period/);
+});
+
+test('copies a weekday as an independent day', () => {
+  const settings = portableSettings();
+  const copied = schedule.copyDay(settings.schedule, 'mon', 'tue');
+  assert.deepEqual(copied, settings.schedule.mon);
+  assert.notStrictEqual(copied, settings.schedule.mon);
+  assert.notStrictEqual(copied.periods, settings.schedule.mon.periods);
+  copied.periods[0].start = '10:00';
+  assert.equal(settings.schedule.mon.periods[0].start, '09:00');
 });
