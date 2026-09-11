@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.2.0
+// @version      2.2.1
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -356,6 +356,8 @@
       version: settings.version,
       timezone: 'auto',
       showActivityBanner: settings.showActivityBanner,
+      activityLogRetentionValue: settings.activityLogRetentionValue,
+      activityLogRetentionUnit: settings.activityLogRetentionUnit,
       schedule: settings.schedule,
     };
     const download = document.createElement('a');
@@ -571,6 +573,8 @@
         const imported = TeamsGreenSchedule.validatePortableSettings(JSON.parse(await file.text()));
         overlay.querySelector('#tge-timezone').value = 'auto';
         overlay.querySelector('#tge-activity-banner').checked = imported.showActivityBanner;
+        if (imported.activityLogRetentionValue !== undefined) logRetentionValue.value = imported.activityLogRetentionValue;
+        if (imported.activityLogRetentionUnit !== undefined) logRetentionUnit.value = imported.activityLogRetentionUnit;
         for (const key of DAY_KEYS) writeDay(key, imported.schedule[key]);
         showToast('Schedule JSON imported. Press Save to apply it.');
       } catch (error) {

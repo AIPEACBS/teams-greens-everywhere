@@ -29,6 +29,8 @@ function portableSettings() {
     version: 2,
     timezone: 'auto',
     showActivityBanner: true,
+    activityLogRetentionValue: 1,
+    activityLogRetentionUnit: 'days',
     schedule: {
       mon: { enabled: true, periods: [{ start: '09:00', end: '17:00', startJitter: 10, endJitter: 10 }] },
       tue: { enabled: false, periods: [] },
@@ -101,8 +103,10 @@ test('respects the top-level Start / Stop setting', () => {
 test('validates the portable schedule format', () => {
   const settings = portableSettings();
   assert.equal(schedule.validatePortableSettings(settings), settings);
+  assert.equal(schedule.validatePortableSettings({ ...settings, activityLogRetentionValue: 6, activityLogRetentionUnit: 'hours' }).activityLogRetentionValue, 6);
   assert.equal(schedule.validatePortableSettings({ ...settings, timezone: 'America/New_York' }).timezone, 'America/New_York');
   assert.throws(() => schedule.validatePortableSettings({ ...settings, timezone: '' }), /invalid timezone/);
+  assert.throws(() => schedule.validatePortableSettings({ ...settings, activityLogRetentionUnit: 'minutes' }), /retention unit/);
   assert.throws(() => schedule.validatePortableSettings({ ...settings, schedule: { ...settings.schedule, tue: { enabled: true, periods: [{ start: '25:00', end: '17:00', startJitter: 0, endJitter: 0 }] } } }), /invalid tue period/);
 });
 

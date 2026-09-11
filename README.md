@@ -48,7 +48,7 @@ During active periods, the script attempts to restore an `Away` status to
 
 The `Log` menu shows the persisted status history. It keeps the current local
 calendar day by default, with retention configurable in hours or calendar days,
-and can be cleared manually.
+and can be cleared manually. The retention setting is included in exported JSON.
 
 ## Windows suppresses web
 

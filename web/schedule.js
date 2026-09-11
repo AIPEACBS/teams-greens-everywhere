@@ -67,6 +67,12 @@
     if (value.version !== 2) throw new Error('Unsupported schedule JSON version.');
     if (typeof value.timezone !== 'string' || !value.timezone.trim()) throw new Error('Schedule JSON has an invalid timezone.');
     if (typeof value.showActivityBanner !== 'boolean') throw new Error('Schedule JSON has an invalid activity banner setting.');
+    if (value.activityLogRetentionValue !== undefined && (!Number.isInteger(value.activityLogRetentionValue) || value.activityLogRetentionValue < 1)) {
+      throw new Error('Schedule JSON has an invalid activity log retention value.');
+    }
+    if (value.activityLogRetentionUnit !== undefined && !['hours', 'days'].includes(value.activityLogRetentionUnit)) {
+      throw new Error('Schedule JSON has an invalid activity log retention unit.');
+    }
     if (!isRecord(value.schedule)) throw new Error('Schedule JSON is missing the schedule.');
 
     for (const key of PORTABLE_DAY_KEYS) {

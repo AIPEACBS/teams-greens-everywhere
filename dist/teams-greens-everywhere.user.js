@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.2.0
+// @version      2.2.1
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -89,6 +89,12 @@
     if (value.version !== 2) throw new Error('Unsupported schedule JSON version.');
     if (typeof value.timezone !== 'string' || !value.timezone.trim()) throw new Error('Schedule JSON has an invalid timezone.');
     if (typeof value.showActivityBanner !== 'boolean') throw new Error('Schedule JSON has an invalid activity banner setting.');
+    if (value.activityLogRetentionValue !== undefined && (!Number.isInteger(value.activityLogRetentionValue) || value.activityLogRetentionValue < 1)) {
+      throw new Error('Schedule JSON has an invalid activity log retention value.');
+    }
+    if (value.activityLogRetentionUnit !== undefined && !['hours', 'days'].includes(value.activityLogRetentionUnit)) {
+      throw new Error('Schedule JSON has an invalid activity log retention unit.');
+    }
     if (!isRecord(value.schedule)) throw new Error('Schedule JSON is missing the schedule.');
 
     for (const key of PORTABLE_DAY_KEYS) {
@@ -557,6 +563,8 @@
       version: settings.version,
       timezone: 'auto',
       showActivityBanner: settings.showActivityBanner,
+      activityLogRetentionValue: settings.activityLogRetentionValue,
+      activityLogRetentionUnit: settings.activityLogRetentionUnit,
       schedule: settings.schedule,
     };
     const download = document.createElement('a');
@@ -772,6 +780,8 @@
         const imported = TeamsGreenSchedule.validatePortableSettings(JSON.parse(await file.text()));
         overlay.querySelector('#tge-timezone').value = 'auto';
         overlay.querySelector('#tge-activity-banner').checked = imported.showActivityBanner;
+        if (imported.activityLogRetentionValue !== undefined) logRetentionValue.value = imported.activityLogRetentionValue;
+        if (imported.activityLogRetentionUnit !== undefined) logRetentionUnit.value = imported.activityLogRetentionUnit;
         for (const key of DAY_KEYS) writeDay(key, imported.schedule[key]);
         showToast('Schedule JSON imported. Press Save to apply it.');
       } catch (error) {

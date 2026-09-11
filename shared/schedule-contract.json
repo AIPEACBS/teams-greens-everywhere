@@ -4,6 +4,8 @@
   "settings": {
     "enabled": "boolean",
     "timezone": "A runtime timezone identifier detected on first setup and editable later; portable schedule JSON uses auto.",
+    "activityLogRetentionValue": "Optional positive integer for browser activity log retention.",
+    "activityLogRetentionUnit": "Optional hours or days for browser activity log retention.",
     "schedule": {
       "mon|tue|wed|thu|fri|sat|sun": {
         "enabled": "boolean",
