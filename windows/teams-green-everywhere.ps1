@@ -346,27 +346,34 @@ function Show-Settings {
     [void]$source.Items.AddRange(@('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'))
     $source.SelectedIndex = 0
     $form.Controls.Add($source)
-    $targetLabel = New-Object System.Windows.Forms.Label
-    $targetLabel.Text = 'to:'
-    $targetLabel.Location = New-Object System.Drawing.Point(380, 437)
-    $targetLabel.AutoSize = $true
-    $form.Controls.Add($targetLabel)
+    $targetButton = New-Object System.Windows.Forms.Button
+    $targetButton.Text = 'Apply to...'
+    $targetButton.Location = New-Object System.Drawing.Point(380, 430)
+    $targetButton.Width = 90
+    $form.Controls.Add($targetButton)
+    $targetMenu = New-Object System.Windows.Forms.ContextMenuStrip
     $target = New-Object System.Windows.Forms.CheckedListBox
-    $target.Location = New-Object System.Drawing.Point(405, 432)
-    $target.Width = 90
-    $target.Height = 72
+    $target.Width = 120
+    $target.Height = 150
+    $target.BorderStyle = 'None'
     $target.CheckOnClick = $true
     foreach ($dayKey in @('tue', 'wed', 'thu', 'fri', 'sat', 'sun')) { [void]$target.Items.Add($dayKey) }
-    $form.Controls.Add($target)
-    $source.Add_SelectedIndexChanged({
+    $targetHost = New-Object System.Windows.Forms.ToolStripControlHost($target)
+    $targetHost.AutoSize = $false
+    $targetHost.Width = 120
+    $targetHost.Height = 150
+    [void]$targetMenu.Items.Add($targetHost)
+    $targetButton.Add_Click({ $targetMenu.Show($targetButton, 0, $targetButton.Height) })
+    $setTargetDays = {
         $target.Items.Clear()
         foreach ($dayKey in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) {
             if ($dayKey -ne [string]$source.SelectedItem) { [void]$target.Items.Add($dayKey) }
         }
-    })
+    }
+    $source.Add_SelectedIndexChanged($setTargetDays)
     $apply = New-Object System.Windows.Forms.Button
     $apply.Text = 'Apply settings'
-    $apply.Location = New-Object System.Drawing.Point(505, 430)
+    $apply.Location = New-Object System.Drawing.Point(475, 430)
     $apply.Add_Click({
         try {
             $sourceKey = [string]$source.SelectedItem
@@ -382,6 +389,8 @@ function Show-Settings {
                     [void]$grid.Rows.Add($targetKey, $row.Cells['Start'].Value, $row.Cells['End'].Value, $row.Cells['StartJitter'].Value, $row.Cells['EndJitter'].Value, $sourceIsEnabled)
                 }
             }
+            for ($index = 0; $index -lt $target.Items.Count; $index += 1) { $target.SetItemChecked($index, $false) }
+            $targetMenu.Close()
         } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null }
     })
     $form.Controls.Add($apply)

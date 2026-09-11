@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.12
+// @version      2.1.13
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -322,7 +322,7 @@
     };
 
     const style = document.createElement('style');
-    style.textContent = '.tge-overlay .tge-period{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.tge-overlay [data-day-row]{margin:16px 0;padding:12px;border:1px solid #444;border-radius:6px}.tge-overlay .tge-day-header{display:flex;justify-content:space-between;align-items:center;gap:12px}.tge-overlay .tge-period input{max-width:120px}.tge-overlay button{cursor:pointer}';
+    style.textContent = '.tge-overlay .tge-period{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.tge-overlay [data-day-row]{margin:16px 0;padding:12px;border:1px solid #444;border-radius:6px}.tge-overlay .tge-day-header{display:flex;justify-content:space-between;align-items:center;gap:12px}.tge-overlay .tge-day-actions{display:flex;align-items:center;gap:6px;position:relative}.tge-overlay .tge-apply-menu{display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:1;min-width:150px;padding:8px;background:#2b2b2b;border:1px solid #666;border-radius:4px;box-shadow:0 4px 12px #0008}.tge-overlay .tge-apply-menu.tge-open{display:grid;gap:6px}.tge-overlay .tge-apply-option{display:flex;gap:6px;align-items:center;white-space:nowrap}.tge-overlay .tge-period input{max-width:120px}.tge-overlay button{cursor:pointer}';
     const main = document.createElement('main');
     main.style.cssText = 'max-width:820px;margin:auto;background:#1e1e1e;padding:24px;border-radius:8px';
     const heading = document.createElement('h2');
@@ -361,22 +361,37 @@
       dayLabel.append(dayEnabled, document.createTextNode(' '), dayTitle);
       const dayHeader = document.createElement('div');
       dayHeader.className = 'tge-day-header';
-      const applyTarget = document.createElement('select');
-      applyTarget.multiple = true;
-      applyTarget.size = 3;
-      applyTarget.setAttribute('aria-label', `Apply ${DAY_NAMES[index]} settings to`);
+      const dayActions = document.createElement('div');
+      dayActions.className = 'tge-day-actions';
+      const applyMenuButton = makeButton('Apply to...');
+      applyMenuButton.setAttribute('aria-haspopup', 'true');
+      applyMenuButton.setAttribute('aria-expanded', 'false');
+      const applyMenu = document.createElement('div');
+      applyMenu.className = 'tge-apply-menu';
+      applyMenu.setAttribute('aria-label', `Apply ${DAY_NAMES[index]} settings to`);
       for (const [targetIndex, targetKey] of DAY_KEYS.entries()) {
         if (targetKey === key) continue;
-        const option = document.createElement('option');
-        option.value = targetKey;
-        option.textContent = DAY_NAMES[targetIndex];
-        applyTarget.append(option);
+        const option = document.createElement('label');
+        option.className = 'tge-apply-option';
+        const checkbox = makeInput('checkbox', '', `${DAY_NAMES[index]} settings to ${DAY_NAMES[targetIndex]}`);
+        checkbox.dataset.applyTarget = targetKey;
+        option.append(checkbox, document.createTextNode(DAY_NAMES[targetIndex]));
+        applyMenu.append(option);
       }
       const apply = makeButton('Apply settings');
       apply.dataset.apply = key;
       apply.disabled = true;
-      applyTarget.addEventListener('change', () => { apply.disabled = applyTarget.selectedOptions.length === 0; });
-      dayHeader.append(dayLabel, applyTarget, apply);
+      applyMenu.addEventListener('change', () => {
+        apply.disabled = !applyMenu.querySelector('[data-apply-target]:checked');
+      });
+      applyMenuButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isOpen = applyMenu.classList.toggle('tge-open');
+        applyMenuButton.setAttribute('aria-expanded', String(isOpen));
+      });
+      applyMenu.addEventListener('click', (event) => event.stopPropagation());
+      dayActions.append(applyMenuButton, apply, applyMenu);
+      dayHeader.append(dayLabel, dayActions);
       const periods = document.createElement('div');
       periods.className = 'tge-periods';
       for (const period of day.periods) periods.append(makePeriod(period, DAY_NAMES[index]));
@@ -430,15 +445,17 @@
     overlay.querySelectorAll('[data-add]').forEach((button) => button.addEventListener('click', () => addPeriod(button.dataset.add)));
     overlay.querySelectorAll('[data-apply]').forEach((button) => button.addEventListener('click', () => {
       const sourceKey = button.dataset.apply;
-      const target = button.parentElement.querySelector('select');
-      const targetKeys = [...target.selectedOptions].map((option) => option.value);
+      const target = button.parentElement.querySelector('.tge-apply-menu');
+      const targetKeys = [...target.querySelectorAll('[data-apply-target]:checked')].map((checkbox) => checkbox.dataset.applyTarget);
       if (targetKeys.length === 0) return;
       const sourceSchedule = { [sourceKey]: readDay(sourceKey) };
       for (const targetKey of targetKeys) {
         writeDay(targetKey, TeamsGreenSchedule.copyDay(sourceSchedule, sourceKey, targetKey));
       }
       showToast(`${DAY_NAMES[DAY_KEYS.indexOf(sourceKey)]} settings applied to ${targetKeys.map((key) => DAY_NAMES[DAY_KEYS.indexOf(key)]).join(', ')}.`);
-      for (const option of target.selectedOptions) option.selected = false;
+      target.querySelectorAll('[data-apply-target]').forEach((checkbox) => { checkbox.checked = false; });
+      target.classList.remove('tge-open');
+      button.parentElement.querySelector('button[aria-haspopup="true"]').setAttribute('aria-expanded', 'false');
       button.disabled = true;
     }));
     overlay.addEventListener('click', (event) => {
