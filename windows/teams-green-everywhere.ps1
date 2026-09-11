@@ -351,28 +351,36 @@ function Show-Settings {
     $targetLabel.Location = New-Object System.Drawing.Point(380, 437)
     $targetLabel.AutoSize = $true
     $form.Controls.Add($targetLabel)
-    $target = New-Object System.Windows.Forms.ComboBox
+    $target = New-Object System.Windows.Forms.CheckedListBox
     $target.Location = New-Object System.Drawing.Point(405, 432)
     $target.Width = 90
-    $target.DropDownStyle = 'DropDownList'
-    [void]$target.Items.AddRange(@('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'))
-    $target.SelectedIndex = 1
+    $target.Height = 72
+    $target.CheckOnClick = $true
+    foreach ($dayKey in @('tue', 'wed', 'thu', 'fri', 'sat', 'sun')) { [void]$target.Items.Add($dayKey) }
     $form.Controls.Add($target)
+    $source.Add_SelectedIndexChanged({
+        $target.Items.Clear()
+        foreach ($dayKey in @('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')) {
+            if ($dayKey -ne [string]$source.SelectedItem) { [void]$target.Items.Add($dayKey) }
+        }
+    })
     $apply = New-Object System.Windows.Forms.Button
     $apply.Text = 'Apply settings'
     $apply.Location = New-Object System.Drawing.Point(505, 430)
     $apply.Add_Click({
         try {
             $sourceKey = [string]$source.SelectedItem
-            $targetKey = [string]$target.SelectedItem
-            if ($sourceKey -eq $targetKey) { throw 'Source and target days must be different.' }
+            $targetKeys = @($target.CheckedItems | ForEach-Object { [string]$_ })
+            if ($targetKeys.Count -eq 0) { throw 'Select at least one target day.' }
             $sourceRows = @($grid.Rows | Where-Object { -not $_.IsNewRow -and [string]$_.Cells['Day'].Value -eq $sourceKey })
             $sourceIsEnabled = [bool]$dayEnabled[$sourceKey]
             if ($sourceRows.Count -gt 0) { $sourceIsEnabled = [bool]$sourceRows[0].Cells['Enabled'].Value }
-            foreach ($row in @($grid.Rows | Where-Object { -not $_.IsNewRow -and [string]$_.Cells['Day'].Value -eq $targetKey })) { $grid.Rows.Remove($row) }
-            $dayEnabled[$targetKey] = $sourceIsEnabled
-            foreach ($row in $sourceRows) {
-                [void]$grid.Rows.Add($targetKey, $row.Cells['Start'].Value, $row.Cells['End'].Value, $row.Cells['StartJitter'].Value, $row.Cells['EndJitter'].Value, $sourceIsEnabled)
+            foreach ($targetKey in $targetKeys) {
+                foreach ($row in @($grid.Rows | Where-Object { -not $_.IsNewRow -and [string]$_.Cells['Day'].Value -eq $targetKey })) { $grid.Rows.Remove($row) }
+                $dayEnabled[$targetKey] = $sourceIsEnabled
+                foreach ($row in $sourceRows) {
+                    [void]$grid.Rows.Add($targetKey, $row.Cells['Start'].Value, $row.Cells['End'].Value, $row.Cells['StartJitter'].Value, $row.Cells['EndJitter'].Value, $sourceIsEnabled)
+                }
             }
         } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $script:AppName) | Out-Null }
     })

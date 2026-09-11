@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Teams Greens Everywhere
 // @namespace    https://github.com/AIPEACBS/teams-greens-everywhere
-// @version      2.1.11
+// @version      2.1.12
 // @description  Schedule Teams web presence with weekday windows and start/end variation.
 // @author       AIPEACBS
 // @homepageURL   https://github.com/AIPEACBS/teams-greens-everywhere
@@ -538,13 +538,9 @@
       const dayHeader = document.createElement('div');
       dayHeader.className = 'tge-day-header';
       const applyTarget = document.createElement('select');
+      applyTarget.multiple = true;
+      applyTarget.size = 3;
       applyTarget.setAttribute('aria-label', `Apply ${DAY_NAMES[index]} settings to`);
-      const applyPlaceholder = document.createElement('option');
-      applyPlaceholder.textContent = 'Choose target day';
-      applyPlaceholder.value = '';
-      applyPlaceholder.disabled = true;
-      applyPlaceholder.selected = true;
-      applyTarget.append(applyPlaceholder);
       for (const [targetIndex, targetKey] of DAY_KEYS.entries()) {
         if (targetKey === key) continue;
         const option = document.createElement('option');
@@ -555,7 +551,7 @@
       const apply = makeButton('Apply settings');
       apply.dataset.apply = key;
       apply.disabled = true;
-      applyTarget.addEventListener('change', () => { apply.disabled = !applyTarget.value; });
+      applyTarget.addEventListener('change', () => { apply.disabled = applyTarget.selectedOptions.length === 0; });
       dayHeader.append(dayLabel, applyTarget, apply);
       const periods = document.createElement('div');
       periods.className = 'tge-periods';
@@ -611,10 +607,14 @@
     overlay.querySelectorAll('[data-apply]').forEach((button) => button.addEventListener('click', () => {
       const sourceKey = button.dataset.apply;
       const target = button.parentElement.querySelector('select');
-      if (!target.value) return;
-      writeDay(target.value, TeamsGreenSchedule.copyDay({ [sourceKey]: readDay(sourceKey) }, sourceKey, target.value));
-      showToast(`${DAY_NAMES[DAY_KEYS.indexOf(sourceKey)]} settings applied to ${DAY_NAMES[DAY_KEYS.indexOf(target.value)]}.`);
-      target.value = '';
+      const targetKeys = [...target.selectedOptions].map((option) => option.value);
+      if (targetKeys.length === 0) return;
+      const sourceSchedule = { [sourceKey]: readDay(sourceKey) };
+      for (const targetKey of targetKeys) {
+        writeDay(targetKey, TeamsGreenSchedule.copyDay(sourceSchedule, sourceKey, targetKey));
+      }
+      showToast(`${DAY_NAMES[DAY_KEYS.indexOf(sourceKey)]} settings applied to ${targetKeys.map((key) => DAY_NAMES[DAY_KEYS.indexOf(key)]).join(', ')}.`);
+      for (const option of target.selectedOptions) option.selected = false;
       button.disabled = true;
     }));
     overlay.addEventListener('click', (event) => {
